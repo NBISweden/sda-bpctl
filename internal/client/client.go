@@ -61,7 +61,7 @@ func New(cfg *config.Config) (*Client, error) {
 	return client, nil
 }
 
-func (c *Client) GetUsersFilesWithPrefix() (*http.Response, error) {
+func (c *Client) GetUsersFilesWithPrefix() ([]byte, error) {
 	basePath := fmt.Sprintf("users/%s/files", c.userID)
 
 	u, err := url.Parse(basePath)
@@ -77,52 +77,52 @@ func (c *Client) GetUsersFilesWithPrefix() (*http.Response, error) {
 }
 
 func (c *Client) GetUsersFiles() ([]models.FileInfo, error) {
-	resp, err := c.doRequest("GET", fmt.Sprintf("users/%s/files", c.userID), nil)
+	respBody, err := c.doRequest("GET", fmt.Sprintf("users/%s/files", c.userID), nil)
 	if err != nil {
 		return nil, err
 	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
 
 	var files []models.FileInfo
-	err = json.Unmarshal(body, &files)
+	err = json.Unmarshal(respBody, &files)
 	if err != nil {
 		return nil, err
 	}
 	return files, nil
 }
 
-func (c *Client) PostFileIngest(payload []byte) (*http.Response, error) {
+func (c *Client) PostFileIngest(payload []byte) ([]byte, error) {
 	return c.doRequest("POST", "file/ingest", payload)
 }
 
-func (c *Client) PostFileAccession(payload []byte) (*http.Response, error) {
+func (c *Client) PostFileAccession(payload []byte) ([]byte, error) {
 	return c.doRequest("POST", "file/accession", payload)
 }
 
-func (c *Client) PostDatasetCreate(payload []byte) (*http.Response, error) {
+func (c *Client) PostDatasetCreate(payload []byte) ([]byte, error) {
 	return c.doRequest("POST", "dataset/create", payload)
 }
 
-func (c *Client) doRequest(method, path string, body []byte) (*http.Response, error) {
+func (c *Client) doRequest(method, path string, body []byte) ([]byte, error) {
 	url := fmt.Sprintf("%s/%s", c.apiHost, path)
-	req, err := http.NewRequest(method, url, bytes.NewReader(body))
-	if err != nil {
-		slog.Warn("client new request err", "err", err)
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+c.accessToken)
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	slog.Info("request", "method", method, "url", url)
 
-	var resp *http.Response
+	var (
+		resp *http.Response
+		err  error
+	)
+
 	err = backoff.Retry(func() error {
+		req, err := http.NewRequest(method, url, bytes.NewReader(body))
+		if err != nil {
+			slog.Warn("client new request err", "err", err)
+			return err
+		}
+
+		req.Header.Set("Authorization", "Bearer "+c.accessToken)
+		if body != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		slog.Info("request", "method", method, "url", url)
+
 		resp, err = c.httpClient.Do(req)
 		if err != nil {
 			slog.Warn("client do err", "err", err)
@@ -130,10 +130,12 @@ func (c *Client) doRequest(method, path string, body []byte) (*http.Response, er
 		}
 
 		if resp.StatusCode == http.StatusInternalServerError {
+			resp.Body.Close()
 			return fmt.Errorf("non-ok response from api: %s", resp.Status)
 		}
 
 		return nil
+
 	}, backoff.NewExponentialBackOff())
 
 	if err != nil {
@@ -141,8 +143,20 @@ func (c *Client) doRequest(method, path string, body []byte) (*http.Response, er
 		return nil, err
 	}
 
-	slog.Info("response", "status", resp.Status)
-	return resp, nil
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, fmt.Errorf("non-ok response: %s", resp.Status)
+	}
+	defer resp.Body.Close()
+
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		slog.Error("could not read response body", "err", err)
+		return nil, err
+	}
+
+	slog.Info("respone", "status", resp.Status, "code", resp.StatusCode)
+	return responseBody, nil
 }
 
 func (c *Client) WaitForAccession(target int, interval time.Duration, timeout time.Duration) ([]string, error) {
