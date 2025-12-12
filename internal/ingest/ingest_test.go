@@ -1,10 +1,7 @@
 package ingest
 
 import (
-	"bytes"
 	"fmt"
-	"io"
-	"net/http"
 	"testing"
 
 	"github.com/NBISweden/submitter/internal/models"
@@ -12,7 +9,7 @@ import (
 
 type mockClient struct {
 	FilesToReturn []models.FileInfo
-	Response      *http.Response
+	Response      []byte
 	CallIndex     int
 }
 
@@ -20,11 +17,11 @@ func (m *mockClient) GetUsersFiles() ([]models.FileInfo, error) {
 	return m.FilesToReturn, nil
 }
 
-func (m *mockClient) PostFileIngest(data []byte) (*http.Response, error) {
+func (m *mockClient) PostFileIngest(data []byte) ([]byte, error) {
 	return m.Response, nil
 }
 
-func (m *mockClient) PostFileAccession(payload []byte) (*http.Response, error) {
+func (m *mockClient) PostFileAccession(payload []byte) ([]byte, error) {
 	return m.Response, nil
 }
 
@@ -36,7 +33,7 @@ func setup(userID string, datasetFolder string) *mockClient {
 			{InboxPath: fmt.Sprintf("/%s/PRIVATE/%s/file4.c4gh", userID, datasetFolder), Status: "uploaded"},
 			{InboxPath: fmt.Sprintf("/%s/%s/file5.c4gh", userID, datasetFolder), Status: "error"},
 		},
-		Response: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewBufferString("ok"))},
+		Response: []byte("ok"),
 	}
 	return mock
 }

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
 	"os"
 	"slices"
 
@@ -44,25 +43,20 @@ var datasetCmd = &cobra.Command{
 			return err
 		}
 
-		r, err := api.GetUsersFilesWithPrefix()
-		if err != nil {
-			return err
-		}
-
-		body, err := io.ReadAll(r.Body)
+		resp, err := api.GetUsersFilesWithPrefix()
 		if err != nil {
 			return err
 		}
 
 		var files []models.FileInfo
-		if err := json.Unmarshal(body, &files); err != nil {
+		if err := json.Unmarshal(resp, &files); err != nil {
 			return err
 		}
 
 		if !dryRun {
 			err := createStableIDsFile(datasetFolder, files)
 			if err != nil {
-				return fmt.Errorf("failed to create stable ids file: %w", err)
+				return err
 			}
 		}
 
@@ -92,8 +86,6 @@ func init() {
 	datasetCmd.Flags().StringVar(&configPath, "config", "config.yaml", "Path to configuration file")
 	datasetCmd.Flags().StringVar(&dataDirectory, "data-directory", "data", "Path to directory to write / read intermediate files for stableIDs and fileIDs")
 }
-
-var ErrFileAlreadyExists = errors.New("file already exists")
 
 type Payload struct {
 	AccessionIDs []string `json:"accession_ids"`
@@ -152,17 +144,13 @@ func createDataset(api *client.Client, datasetID string, userID string, fileIDsL
 			return err
 		}
 
-		response, err := api.PostDatasetCreate(jsonData)
+		_, err = api.PostDatasetCreate(jsonData)
 		if err != nil {
 			if errors.Is(err, io.ErrUnexpectedEOF) {
 			} else {
 				return err
 			}
 		}
-		if response.StatusCode != http.StatusOK {
-			slog.Warn("got non-ok response", "status_code", response.StatusCode)
-		}
-		defer response.Body.Close() //nolint:errcheck
 	}
 
 	slog.Info("creation of dataset completed!")
@@ -173,40 +161,33 @@ func sendInChunks(fileIDsList []string, api *client.Client, datasetID string, us
 	slog.Info("more than 100 entries, sending in chunks of 100")
 	chunks := slices.Chunk(fileIDsList, 100)
 	allChunks := slices.Collect(chunks)
-	var nonOkResponds []http.Response
 	for _, chunk := range allChunks {
 		payload := Payload{
 			AccessionIDs: chunk,
 			DatasetID:    datasetID,
 			User:         userID,
 		}
+
 		jsonData, err := json.Marshal(payload)
 		if err != nil {
 			return err
 		}
-		response, err := api.PostDatasetCreate(jsonData)
+		_, err = api.PostDatasetCreate(jsonData)
 		if err != nil {
 			if errors.Is(err, io.ErrUnexpectedEOF) {
 				continue
 			}
 			return err
 		}
-		if response.StatusCode != http.StatusOK {
-			nonOkResponds = append(nonOkResponds, *response)
-			slog.Warn("got non-ok response", "status_code", response.StatusCode)
-		}
-		defer response.Body.Close() //nolint:errcheck
 	}
-	if len(nonOkResponds) != 0 {
-		slog.Warn("found non-ok responds from SDA API", "non-oks", len(nonOkResponds))
-	}
+
 	return nil
 }
 
 func createStableIDsFile(datasetFolder string, files []models.FileInfo) error {
 	filePath := helpers.GetStableIDsPath(dataDirectory, datasetFolder)
 	if _, err := os.Stat(filePath); err == nil {
-		return ErrFileAlreadyExists
+		return err
 	} else if !os.IsNotExist(err) {
 		return err
 	}

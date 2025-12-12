@@ -3,9 +3,7 @@ package ingest
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
 	"strings"
 
 	"github.com/NBISweden/submitter/cmd"
@@ -87,17 +85,14 @@ func filterFiles(files []models.FileInfo, datasetFolder string) []string {
 func ingestFiles(api client.APIClient, datasetFolder string, userID string, files []models.FileInfo) (int, error) {
 	slog.Info("starting ingest")
 	fileList := filterFiles(files, datasetFolder)
-
 	filesCount := len(fileList)
+	okResponds := len(fileList)
+
 	slog.Info("number of files to ingest", "filesCount", filesCount)
 	if dryRun {
 		slog.Info("dry-run enabled. No files will be ingested")
 		return filesCount, nil
 	}
-
-	var resendPayloads []map[string]string
-	var nonOKResponds []int
-	var okResponds []int
 
 	for _, path := range fileList {
 		payload := map[string]string{
@@ -106,36 +101,13 @@ func ingestFiles(api client.APIClient, datasetFolder string, userID string, file
 		}
 		data, _ := json.Marshal(payload)
 
-		response, err := api.PostFileIngest(data)
+		_, err := api.PostFileIngest(data)
 		if err != nil {
-			return filesCount, err
-		}
-
-		if response.StatusCode != http.StatusOK {
-			nonOKResponds = append(nonOKResponds, response.StatusCode)
-			resendPayloads = append(resendPayloads, payload)
-		}
-
-		if response.StatusCode == http.StatusOK {
-			okResponds = append(okResponds, response.StatusCode)
-		}
-
-		io.Copy(io.Discard, response.Body) //nolint:errcheck
-		response.Body.Close()              //nolint:errcheck
-	}
-
-	if len(resendPayloads) != 0 {
-		slog.Warn("found non-ok responds from SDA API", "non-oks", len(resendPayloads))
-		countResponds := make(map[int]int)
-		for _, code := range nonOKResponds {
-			countResponds[code]++
-		}
-
-		for code, count := range countResponds {
-			slog.Warn("non-ok responds", "count", count, "code", code)
+			okResponds -= 1
+			slog.Warn("file not ingested", "filepath", path, "err", err)
 		}
 	}
 
-	slog.Info(fmt.Sprintf("ingested %d/%d successful responses", len(okResponds), filesCount))
-	return len(okResponds), nil
+	slog.Info(fmt.Sprintf("ingested %d/%d successful responses", okResponds, filesCount))
+	return okResponds, nil
 }

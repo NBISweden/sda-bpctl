@@ -64,7 +64,7 @@ var accessionCmd = &cobra.Command{
 			slog.Info("dry run enabled, no accession ids will be created")
 			return nil
 		}
-		accessionIDs, err := postAccessionIDs(api, paths, userID, datasetFolder)
+		accessionIDs, err := postAccessionIDs(api, paths, userID)
 
 		for _, accessionID := range accessionIDs {
 			if _, err := file.WriteString(accessionID + "\n"); err != nil {
@@ -95,7 +95,7 @@ func Run(api client.APIClient, db database.PostgresDb, datasetFolder string, use
 	}
 
 	paths := getPathsForAccessionIDs(files)
-	accessionIDs, err := postAccessionIDs(api, paths, userID, datasetFolder)
+	accessionIDs, err := postAccessionIDs(api, paths, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +117,7 @@ func getPathsForAccessionIDs(files []models.FileInfo) []string {
 	return paths
 }
 
-func postAccessionIDs(api client.APIClient, paths []string, userID string, datasetFolder string) ([]string, error) {
+func postAccessionIDs(api client.APIClient, paths []string, userID string) ([]string, error) {
 	var accessionIDs []string
 	for _, filepath := range paths {
 		accessionID, err := generateAccessionID()
@@ -134,14 +134,13 @@ func postAccessionIDs(api client.APIClient, paths []string, userID string, datas
 			return accessionIDs, err
 		}
 
-		resp, err := api.PostFileAccession(payload)
+		_, err = api.PostFileAccession(payload)
 		if err != nil {
 			if errors.Is(err, io.ErrUnexpectedEOF) {
 				continue
 			}
 			return accessionIDs, err
 		}
-		defer resp.Body.Close() //nolint:errcheck
 		accessionIDs = append(accessionIDs, accessionID)
 	}
 
