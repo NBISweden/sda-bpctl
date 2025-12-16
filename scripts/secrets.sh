@@ -4,7 +4,7 @@
 # supply the kubernetes namespace as 
 set -euo pipefail
 
-SECRET_NAME="sda-sda-svc-submitter"
+SECRET_NAME="sda-sda-svc-bpctl"
 if [[ -z "${1:-}" ]]; then
   echo "ERROR: no namespace supplied"
   echo "USAGE: ./secrets.sh <NAMESPACE>"

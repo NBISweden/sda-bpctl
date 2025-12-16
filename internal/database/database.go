@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/NBISweden/submitter/internal/config"
+	"github.com/NBISweden/sda-bpctl/internal/config"
 	_ "github.com/lib/pq"
 )
 

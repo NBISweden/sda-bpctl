@@ -5,7 +5,7 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:          "submitter",
+	Use:          "bpctl",
 	Short:        "Runs dataset submissions",
 	Long:         `Runs dataset submissions`,
 	SilenceUsage: true,

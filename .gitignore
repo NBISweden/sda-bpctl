@@ -31,7 +31,8 @@ config.yaml
 job.yaml
 
 # Binary if no output is specified
-submitter
+bpctl
+sda-bpctl
 
 # Output files
 data/*
