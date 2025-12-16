@@ -6,13 +6,13 @@ kind: Job
 metadata:
   name: aa-dataset-abc
   labels:
-    release: pipeline
+    release: sda
 spec:
   backoffLimit: 0
   template:
     metadata:
       labels:
-        release: pipeline
+        release: sda
     spec:
       securityContext:
         fsGroup: 65534
@@ -110,4 +110,4 @@ spec:
         - name: tls
           secret:
             defaultMode: 288
-            secretName: svc-api-certs
+            secretName: sda-sda-svc-api-certs
