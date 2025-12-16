@@ -4,12 +4,12 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/NBISweden/submitter/cmd"
-	_ "github.com/NBISweden/submitter/internal/accession"
-	_ "github.com/NBISweden/submitter/internal/dataset"
-	_ "github.com/NBISweden/submitter/internal/ingest"
-	_ "github.com/NBISweden/submitter/internal/job"
-	_ "github.com/NBISweden/submitter/internal/mail"
+	"github.com/NBISweden/sda-bpctl/cmd"
+	_ "github.com/NBISweden/sda-bpctl/internal/accession"
+	_ "github.com/NBISweden/sda-bpctl/internal/dataset"
+	_ "github.com/NBISweden/sda-bpctl/internal/ingest"
+	_ "github.com/NBISweden/sda-bpctl/internal/job"
+	_ "github.com/NBISweden/sda-bpctl/internal/mail"
 )
 
 var version = "v1.1.0"

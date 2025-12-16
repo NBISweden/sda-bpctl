@@ -8,8 +8,8 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/NBISweden/submitter/cmd"
-	"github.com/NBISweden/submitter/internal/config"
+	"github.com/NBISweden/sda-bpctl/cmd"
+	"github.com/NBISweden/sda-bpctl/internal/config"
 	"github.com/spf13/cobra"
 	"gopkg.in/gomail.v2"
 )

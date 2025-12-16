@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NBISweden/submitter/internal/config"
-	"github.com/NBISweden/submitter/internal/models"
+	"github.com/NBISweden/sda-bpctl/internal/config"
+	"github.com/NBISweden/sda-bpctl/internal/models"
 	"github.com/cenkalti/backoff/v4"
 )
 

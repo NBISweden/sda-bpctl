@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/NBISweden/submitter/internal/models"
+	"github.com/NBISweden/sda-bpctl/internal/models"
 	"github.com/cenkalti/backoff/v4"
 )
 

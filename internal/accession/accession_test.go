@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/NBISweden/submitter/internal/models"
+	"github.com/NBISweden/sda-bpctl/internal/models"
 )
 
 type mockClient struct {

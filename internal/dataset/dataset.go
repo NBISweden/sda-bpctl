@@ -10,11 +10,11 @@ import (
 	"os"
 	"slices"
 
-	"github.com/NBISweden/submitter/cmd"
-	"github.com/NBISweden/submitter/helpers"
-	"github.com/NBISweden/submitter/internal/client"
-	"github.com/NBISweden/submitter/internal/config"
-	"github.com/NBISweden/submitter/internal/models"
+	"github.com/NBISweden/sda-bpctl/cmd"
+	"github.com/NBISweden/sda-bpctl/helpers"
+	"github.com/NBISweden/sda-bpctl/internal/client"
+	"github.com/NBISweden/sda-bpctl/internal/config"
+	"github.com/NBISweden/sda-bpctl/internal/models"
 	"github.com/spf13/cobra"
 )
 

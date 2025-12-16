@@ -1,4 +1,4 @@
-module github.com/NBISweden/submitter
+module github.com/NBISweden/sda-bpctl
 
 go 1.24.3
 
@@ -7,13 +7,13 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/spf13/cobra v1.10.1
 	github.com/spf13/viper v1.21.0
-	google.golang.org/grpc v1.76.0
 	gopkg.in/gomail.v2 v2.0.0-20160411212932-81ebce5c23df
 )
 
 require (
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
+	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/sagikazarmark/locafero v0.11.0 // indirect
