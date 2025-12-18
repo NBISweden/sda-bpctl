@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  release:
+    types: ["created", "edited"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.24"
+
+      - name: Build binary
+        run: |
+          GOOS=linux GOARCH=amd64 go build \
+            -ldflags "-X main.version=${{ github.ref_name }}" \
+            -o bpctl .
+
+      - name: Package artifact
+        run: |
+          gzip -c bpctl > bpctl-amd64-${{ github.ref_name }}.gz
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bpctl-amd64
+          path: bpctl-amd64-${{ github.ref_name }}.gz
+
+  release:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: bpctl-${{ github.ref_name }}
+          files: ./artifacts/**/*.gz
