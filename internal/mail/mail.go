@@ -93,14 +93,14 @@ func New(c *config.Config) *Mail {
 			"BigPicture": {
 				email:       "submit@bigpicture.eu",
 				template:    "notify-bigpicture.html",
-				subject:     fmt.Sprintf("Dataset %s has been ingested", c.DatasetFolder),
+				subject:     fmt.Sprintf("Dataset %s has been ingested", c.DatasetID),
 				attachments: []string{fmt.Sprintf("%s/dataset.txt", dataDirectory), fmt.Sprintf("%s/policy.txt", dataDirectory)},
 			},
 			"Minttu": {
 				email:       "minttu.sauramo@hus.fi",
 				cc:          []string{"jarno.laitinen@csc.fi"},
 				template:    "notify-minttu.html",
-				subject:     fmt.Sprintf("Dataset %s has been ingested", c.DatasetFolder),
+				subject:     fmt.Sprintf("Dataset %s has been ingested", c.DatasetID),
 				attachments: []string{fmt.Sprintf("%s/dataset.txt", dataDirectory), fmt.Sprintf("%s/rems.txt", dataDirectory), fmt.Sprintf("%s/policy.txt", dataDirectory)},
 			},
 		},
