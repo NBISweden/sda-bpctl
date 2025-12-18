@@ -58,9 +58,10 @@ type Mail struct {
 }
 
 type TemplateData struct {
-	Uploader      string
-	DatasetID     string
-	DatasetFolder string
+	Uploader         string
+	OrganizationName string
+	DatasetID        string
+	DatasetFolder    string
 }
 
 type Notifiers struct {
@@ -79,9 +80,10 @@ func New(c *config.Config) *Mail {
 		password: c.MailPassword,
 		from:     c.MailAddress,
 		data: TemplateData{
-			Uploader:      c.MailUploaderName,
-			DatasetID:     c.DatasetID,
-			DatasetFolder: c.DatasetFolder,
+			Uploader:         c.MailUploaderName,
+			OrganizationName: c.MailUploaderOrganizationName,
+			DatasetID:        c.DatasetID,
+			DatasetFolder:    c.DatasetFolder,
 		},
 		lookup: map[string]Notifiers{
 			"Submitter": {
