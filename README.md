@@ -72,7 +72,7 @@ will render a job.yaml manifest for you based on the configuration values you ha
 bpctl can consume configuration from either `config.yaml` or from environment variables. If both are supplied then the environment variables will take priority. If using config.yaml it is expected to be located in the root directory of the project. It can also be supplied by using the `--config` flag if located elsewhere.
 
 see the `config.yaml.example` for a base template with what fields to fill
-| Name | Example | Description | requiered for |
+| Name | Example | Description | used by |
 | --------------- | --------------- | --------------- | --------------- |
 | USER_ID | "user-1234" | The user ID for the uploader, acts as identifier for the uploaded data | `ingest`, `accession`, `dataset`, `job`, `render` |
 | DATASET_ID | "aa-Dataset-abc" | The ID that will be set for the finalized dataset, will be used during the `dataset` command | `ingest`, `accession`, `dataset`, `job`, `mail`, `render` |
@@ -80,14 +80,14 @@ see the `config.yaml.example` for a base template with what fields to fill
 | JOB_EXPECTED_NR_FILES | 0 | The expected number of files to be part of the finalized dataset, set this when using `render` to include it in the rendered job.yaml | `job`, `render` |
 | CLIENT_API_HOST | "https://api.example.com" | The hostname for the SDA API to communicate with | `ingest`, `accession`, `dataset`, `job` |
 | CLIENT_ACCESS_TOKEN | "youraccesstoken" | The access token to authenticate towards the client api host | Yes | `ingest`, `accession`, `dataset`, `job` |
-| MAIL_ADDRESS | "myemail@example.com" | Used for the `mail` command, this will be the email address the outgoing emails will be sent from | `mail`, `render` |
-| MAIL_PASSWORD | "mypasswordemail" | Password associated with mail address | `mail`, `render` |
-| MAIL_UPLOADER | "jane@example.com" | Mail address to the uploader, this is the address the outgoing email will be sent to | `mail`, `render` |
-| MAIL_UPLOADER_NAME | "Jane Doe" | Name of the uploader | `mail`, `render` |
-| MAIL_SMTP_HOST | "smtp.example.com" | Hostname to a mail server to relay mails through | `mail`, `render` |
-| MAIL_SMTP_PORT | 587 | Port for the mail server | `mail`, `render` |
-| DB_SECRET_NAME | "db-secret" | The name of the kubernetes secret that holds connection details for the sda database | `job` |
-| CERT_SECRET_NAME | "cert-secret" | The name of the kubernetes secret that holds a tls certificate to use | `job` |
+| MAIL_ADDRESS | "myemail@example.com" | Used for the `mail` command, this will be the email address the outgoing emails will be sent from | `mail` |
+| MAIL_PASSWORD | "mypasswordemail" | Password associated with mail address | `mail` |
+| MAIL_UPLOADER | "jane@example.com" | Mail address to the uploader, this is the address the outgoing email will be sent to | `mail` |
+| MAIL_UPLOADER_NAME | "Jane Doe" | Name of the uploader | `mail` |
+| MAIL_SMTP_HOST | "smtp.example.com" | Hostname to a mail server to relay mails through | `mail` |
+| MAIL_SMTP_PORT | 587 | Port for the mail server | `mail` |
+| DB_SECRET_NAME | "db-secret" | The name of the kubernetes secret that holds connection details for the sda database | `job` ,`render` |
+| CERT_SECRET_NAME | "cert-secret" | The name of the kubernetes secret that holds a tls certificate to use | `job`, `render` |
 
 ### testing
 
