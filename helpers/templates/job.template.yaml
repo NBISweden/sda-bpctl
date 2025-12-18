@@ -1,18 +1,15 @@
-# ===============================
-# Job Configuration Example. Use this as a starting point to populate your own config
-# ===============================
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: aa-dataset-abc
-  labels:
-    release: sda
+  name: {{ .JobName }}
+  labels: 
+    release: {{ .JobReleaseLabel }}
 spec:
   backoffLimit: 0
   template:
     metadata:
       labels:
-        release: sda
+        release: {{ .JobReleaseLabel }}
     spec:
       securityContext:
         fsGroup: 65534
@@ -23,73 +20,73 @@ spec:
         - name: bpctl
           image: harbor.nbis.se/sda/bpctl:latest
           imagePullPolicy: Always
-          args: ["job", "0"] # The second arg represents the expected number of files to be in the final dataset
+          args: {{ .JobArgs }}
           env:
             - name: USER_ID
-              value: johndoe@lifescience-ri.eu
+              value: {{ .UserID }}
             - name: DATASET_ID
-              value: aa-Dataset-abc
+              value: {{ .DatasetID }}
             - name: DATASET_FOLDER
-              value: DATASET_ABC
+              value: {{ .DatasetFolder }}
             - name: SSL_CA_CERT
-              value: "/.secrets/tls/ca.crt"
+              value: "{{ .SslCaCert }}"
             - name: CLIENT_API_HOST
-              value: https://api:8080
+              value: {{ .ClientApiHost }}
             - name: CLIENT_ACCESS_TOKEN 
-              value:
+              value: {{ .ClientAccesToken }}
             - name: MAIL_UPLOADER_NAME
-              value: "John Doe"
+              value: "{{ .MailUploaderName }}"
             - name: MAIL_UPLOADER
-              value: uploader@email.com
+              value: {{ .MailUploader }}
             - name: MAIL_ADDRESS
-              value: yourmail@yourmailservice.com
+              value: {{ .MailAddress }}
             - name: MAIL_PASSWORD
-              value: yourpassword
+              value: {{ .MailPassword }}
             - name: MAIL_SMTP_HOST
-              value: yourmailservice.com
+              value: {{ .MailSmptHost }}
             - name: MAIL_SMTP_PORT
-              value: "587"
+              value: "{{ .MailSmptPort }}"
             - name: DB_HOST
               valueFrom:
                 secretKeyRef:
-                  name: sda-sda-svc-bpctl
+                  name: {{ .DbSecretName }}
                   key: DB_HOST
             - name: DB_PORT
               valueFrom:
                 secretKeyRef:
-                  name: sda-sda-svc-bpctl
+                  name: {{ .DbSecretName }}
                   key: DB_PORT
             - name: DB_USER
               valueFrom:
                 secretKeyRef:
-                  name: sda-sda-svc-bpctl
+                  name: {{ .DbSecretName }}
                   key: DB_USER
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: sda-sda-svc-bpctl
+                  name: {{ .DbSecretName }}
                   key: DB_PASSWORD
             - name: DB_NAME
               valueFrom:
                 secretKeyRef:
-                  name: sda-sda-svc-bpctl
+                  name: {{ .DbSecretName }}
                   key: DB_NAME
             - name: DB_SCHEMA
               valueFrom:
                 secretKeyRef:
-                  name: sda-sda-svc-bpctl
+                  name: {{ .DbSecretName }}
                   key: DB_SCHEMA
             - name: DB_SSL_MODE
               valueFrom:
                 secretKeyRef:
-                  name: sda-sda-svc-bpctl
+                  name: {{ .DbSecretName }}
                   key: DB_SSL_MODE
             - name: DB_CA_CERT
               value: "/.secrets/tls/ca.crt"
             - name: DB_CLIENT_CERT
-              value: /.secrets/tls/tls.crt
+              value: "/.secrets/tls/tls.crt"
             - name: DB_CLIENT_KEY
-              value: /.secrets/tls/tls.key
+              value: "/.secrets/tls/tls.key"
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
@@ -110,4 +107,4 @@ spec:
         - name: tls
           secret:
             defaultMode: 288
-            secretName: sda-sda-svc-api-certs
+            secretName: {{ .CertSecretName }}

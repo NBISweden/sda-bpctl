@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
-# This can be used as a helper to provision secrets consumed by job.yaml
-# expected env variables to be set $DB_USER, $DB_NAME, $DB_SCHEMA, $DB_HOST, $DB_PASSWORD, $DB_PORT, $DB_SSL_MODE
-# supply the kubernetes namespace as 
 set -euo pipefail
 
-SECRET_NAME="sda-sda-svc-bpctl"
 if [[ -z "${1:-}" ]]; then
   echo "ERROR: no namespace supplied"
   echo "USAGE: ./secrets.sh <NAMESPACE>"
   exit 1
 fi
 NAMESPACE=$1
+
+if [[ $NAMESPACE == "sda-prod" ]]; then
+  SECRET_NAME="sda-bpctl"
+elif [[ $NAMESPACE == "sda-staging" ]]; then
+  SECRET_NAME="pipeline-bpctl"
+else
+  echo "namespace not recognized, need; sda-prod/sda-staging"
+  exit 1
+fi
 
 required_envs=(
   NAMESPACE
@@ -36,13 +41,13 @@ for var in "${required_envs[@]}"; do
 done
 
 if [[ "$missing" == true ]]; then
-  echo "🚫 Aborting: One or more required environment variables are missing."
+  echo "Aborting: One or more required environment variables are missing."
   exit 1
 fi
 
 echo "creating: $SECRET_NAME ..."
 
-# Use kubectl apply so rerunning is idempotent
+# Use kubectl apply to ensure idempotent operation
 kubectl apply -f - <<EOF
 apiVersion: v1
 kind: Secret

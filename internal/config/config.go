@@ -14,8 +14,11 @@ type Config struct {
 	SslCaCert                    string `mapstructure:"SSL_CA_CERT"`
 	Timeout                      int    `mapstructure:"JOB_TIMEOUT"`
 	PollRate                     int    `mapstructure:"JOB_POLL_RATE"`
+	ExpectedNrFiles              int    `mapstructure:"JOB_EXPECTED_NR_FILES"`
 	ClientApiHost                string `mapstructure:"CLIENT_API_HOST"`
 	ClientAccessToken            string `mapstructure:"CLIENT_ACCESS_TOKEN"`
+	CertSecretName               string `mapstructure:"CERT_SECRET_NAME"`
+	DbSecretName                 string `mapstructure:"DB_SECRET_NAME"`
 	DbHost                       string `mapstructure:"DB_HOST"`
 	DbPort                       int    `mapstructure:"DB_PORT"`
 	DbUser                       string `mapstructure:"DB_USER"`
@@ -42,6 +45,7 @@ func NewConfig(configPath string) (*Config, error) {
 
 	v.SetDefault("JOB_TIMEOUT", 4320)
 	v.SetDefault("JOB_POLL_RATE", 180)
+	v.SetDefault("JOB_EXPECTED_NR_FILES", 0)
 
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
@@ -70,6 +74,7 @@ func bindKeys(v *viper.Viper) {
 	v.BindEnv("SSL_CA_CERT")
 	v.BindEnv("JOB_TIMEOUT")
 	v.BindEnv("JOB_POLL_RATE")
+	v.BindEnv("JOB_EXPECTED_NR_FILES")
 	v.BindEnv("CLIENT_API_HOST")
 	v.BindEnv("CLIENT_ACCESS_TOKEN")
 	v.BindEnv("DB_HOST")

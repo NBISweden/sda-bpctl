@@ -2,36 +2,28 @@
 # Application Configuration Example. Use this to populate your own config
 # ===============================
 
-# shared configs
+# shared configurations
 USER_ID: "user-1234"
 DATASET_ID: "aa-Dataset-abc"
 DATASET_FOLDER: "DATASET_ABC"
-SSL_CA_CERT: "/etc/ssl/certs/ca.crt"
 
-# job.go
+# job specific configurations
 JOB_TIMEOUT: 3
 JOB_POLL_RATE: 2
+JOB_EXPECTED_NR_FILES: 0
 
-# client.go
+# client specific configurations
 CLIENT_API_HOST: "https://api.example.com"
 CLIENT_ACCESS_TOKEN: "youraccesstoken"
 
-# mail.go
+# secrets to consume sensetive data from
+DB_SECRET_NAME: "db-secret"
+CERT_SECRET_NAME: "cert-secret"
+
+# mail specific configurations
 MAIL_ADDRESS: "myemail@example.com"
 MAIL_PASSWORD: "mypasswordemail"
 MAIL_UPLOADER: "jane@example.com"
 MAIL_UPLOADER_NAME: "Jane Doe"
 MAIL_SMTP_HOST: "smtp.example.com"
 MAIL_SMTP_PORT: 587
-
-# database.go
-DB_HOST: "localhost"
-DB_PORT: "15432"
-DB_USER: "api"
-DB_PASSWORD: "api"
-DB_NAME: "postgres"
-DB_SCHEMA: "sda"
-DB_SSL_MODE: "disable"
-DB_CA_CERT: ""
-DB_CLIENT_CERT: ""
-DB_CLIENT_KEY: ""
