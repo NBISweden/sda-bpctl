@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"fmt"
+	"log/slog"
 
 	"github.com/NBISweden/sda-bpctl/internal/models"
 	"github.com/cenkalti/backoff/v4"
@@ -21,6 +22,7 @@ AND NOT EXISTS (SELECT 1 FROM sda.file_dataset d WHERE f.id = d.file_id);`
 	err := backoff.Retry(func() error {
 		var err error
 		rows, err = db.Query(query, userID, fmt.Sprintf("%s%%", pathPrefix))
+		slog.Error("query failed", "error", err)
 		return err
 	}, backoff.NewExponentialBackOff())
 	if err != nil {

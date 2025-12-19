@@ -25,5 +25,6 @@ MAIL_ADDRESS: "myemail@example.com"
 MAIL_PASSWORD: "mypasswordemail"
 MAIL_UPLOADER: "jane@example.com"
 MAIL_UPLOADER_NAME: "Jane Doe"
+MAIL_UPLOADER_ORGANIZATION_NAME: "org"
 MAIL_SMTP_HOST: "smtp.example.com"
 MAIL_SMTP_PORT: 587
