@@ -10,7 +10,6 @@ import (
 	"github.com/NBISweden/sda-bpctl/internal/accession"
 	"github.com/NBISweden/sda-bpctl/internal/client"
 	"github.com/NBISweden/sda-bpctl/internal/config"
-	"github.com/NBISweden/sda-bpctl/internal/database"
 	"github.com/NBISweden/sda-bpctl/internal/dataset"
 	"github.com/NBISweden/sda-bpctl/internal/ingest"
 	"github.com/spf13/cobra"
@@ -74,13 +73,7 @@ func runJob(expectedFiles int) error {
 		return err
 	}
 
-	db, err := database.New(cfg)
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	filesCount, err := ingest.Run(api, *db, datasetFolder, userID, expectedFiles)
+	filesCount, err := ingest.Run(api, datasetFolder, userID, expectedFiles)
 	if err != nil {
 		return err
 	}
@@ -94,7 +87,7 @@ func runJob(expectedFiles int) error {
 		return err
 	}
 
-	accessionIDs, err := accession.Run(api, *db, datasetFolder, userID)
+	accessionIDs, err := accession.Run(api, datasetFolder, userID)
 	if err != nil {
 		return err
 	}

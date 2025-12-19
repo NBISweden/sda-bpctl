@@ -13,7 +13,7 @@ import (
 	_ "github.com/NBISweden/sda-bpctl/internal/mail"
 )
 
-var version = "v1.1.1"
+var version = "v1.1.2"
 
 func main() {
 	slog.Info("running", "version", version)

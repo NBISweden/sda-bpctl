@@ -15,7 +15,6 @@ import (
 	"github.com/NBISweden/sda-bpctl/helpers"
 	"github.com/NBISweden/sda-bpctl/internal/client"
 	"github.com/NBISweden/sda-bpctl/internal/config"
-	"github.com/NBISweden/sda-bpctl/internal/database"
 	"github.com/NBISweden/sda-bpctl/internal/models"
 	"github.com/spf13/cobra"
 )
@@ -87,9 +86,9 @@ func init() {
 	accessionCmd.Flags().StringVar(&dataDirectory, "data-directory", "data", "Path to directory to write / read intermediate files for stableIDs and fileIDs")
 }
 
-func Run(api client.APIClient, db database.PostgresDb, datasetFolder string, userID string) ([]string, error) {
+func Run(api client.APIClient, datasetFolder string, userID string) ([]string, error) {
 	slog.Info("starting accession")
-	files, err := db.GetUserFiles(userID, datasetFolder, true)
+	files, err := api.GetUsersFiles()
 	if err != nil {
 		return nil, err
 	}

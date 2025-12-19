@@ -9,7 +9,6 @@ import (
 	"github.com/NBISweden/sda-bpctl/cmd"
 	"github.com/NBISweden/sda-bpctl/internal/client"
 	"github.com/NBISweden/sda-bpctl/internal/config"
-	"github.com/NBISweden/sda-bpctl/internal/database"
 	"github.com/NBISweden/sda-bpctl/internal/models"
 	"github.com/spf13/cobra"
 )
@@ -52,8 +51,8 @@ func init() {
 	ingestCmd.Flags().StringVar(&configPath, "config", "config.yaml", "Path to configuration file")
 }
 
-func Run(api client.APIClient, db database.PostgresDb, datasetFolder string, userID string, expectedFiles int) (int, error) {
-	files, err := db.GetUserFiles(userID, datasetFolder, true)
+func Run(api client.APIClient, datasetFolder string, userID string, expectedFiles int) (int, error) {
+	files, err := api.GetUsersFiles()
 	if err != nil {
 		return 0, err
 	}
