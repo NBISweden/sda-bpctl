@@ -21,26 +21,27 @@ var configPath string
 var output string
 
 type TemplateData struct {
-	JobName          string
-	JobReleaseLabel  string
-	JobArgs          string
-	UserID           string
-	DatasetID        string
-	DatasetFolder    string
-	SslCaCert        string
-	ClientApiHost    string
-	ClientAccesToken string
-	MailUploaderName string
-	MailUploader     string
-	MailAddress      string
-	MailPassword     string
-	MailSmptHost     string
-	MailSmptPort     string
-	DbSecretName     string
-	DbCaCert         string
-	DbClientCert     string
-	DbClientKey      string
-	CertSecretName   string
+	JobName                      string
+	JobReleaseLabel              string
+	JobArgs                      string
+	UserID                       string
+	DatasetID                    string
+	DatasetFolder                string
+	SslCaCert                    string
+	ClientApiHost                string
+	ClientAccesToken             string
+	MailUploaderName             string
+	MailUploaderOrganizationName string
+	MailUploader                 string
+	MailAddress                  string
+	MailPassword                 string
+	MailSmptHost                 string
+	MailSmptPort                 string
+	DbSecretName                 string
+	DbCaCert                     string
+	DbClientCert                 string
+	DbClientKey                  string
+	CertSecretName               string
 }
 
 var renderCmd = &cobra.Command{
@@ -83,23 +84,24 @@ func init() {
 
 func createTemplateData(cfg *config.Config) (TemplateData, error) {
 	templateData := &TemplateData{
-		JobName:          strings.ToLower(strings.ReplaceAll(cfg.DatasetFolder, "_", "-")),
-		JobReleaseLabel:  "sda",
-		JobArgs:          fmt.Sprintf("[\"job\", \"%d\"]", cfg.ExpectedNrFiles),
-		UserID:           cfg.UserID,
-		DatasetID:        cfg.DatasetID,
-		DatasetFolder:    cfg.DatasetFolder,
-		SslCaCert:        "/.secrets/tls/ca.crt",
-		ClientApiHost:    cfg.ClientApiHost,
-		ClientAccesToken: cfg.ClientAccessToken,
-		MailUploaderName: cfg.MailUploaderName,
-		MailUploader:     cfg.MailUploader,
-		MailAddress:      cfg.MailAddress,
-		MailPassword:     cfg.MailPassword,
-		MailSmptHost:     cfg.MailSmtpHost,
-		MailSmptPort:     strconv.Itoa(cfg.MailSmtpPort),
-		CertSecretName:   cfg.CertSecretName,
-		DbSecretName:     cfg.DbSecretName,
+		JobName:                      strings.ToLower(strings.ReplaceAll(cfg.DatasetFolder, "_", "-")),
+		JobReleaseLabel:              "sda",
+		JobArgs:                      fmt.Sprintf("[\"job\", \"%d\"]", cfg.ExpectedNrFiles),
+		UserID:                       cfg.UserID,
+		DatasetID:                    cfg.DatasetID,
+		DatasetFolder:                cfg.DatasetFolder,
+		SslCaCert:                    "/.secrets/tls/ca.crt",
+		ClientApiHost:                cfg.ClientApiHost,
+		ClientAccesToken:             cfg.ClientAccessToken,
+		MailUploaderName:             cfg.MailUploaderName,
+		MailUploaderOrganizationName: cfg.MailUploaderOrganizationName,
+		MailUploader:                 cfg.MailUploader,
+		MailAddress:                  cfg.MailAddress,
+		MailPassword:                 cfg.MailPassword,
+		MailSmptHost:                 cfg.MailSmtpHost,
+		MailSmptPort:                 strconv.Itoa(cfg.MailSmtpPort),
+		CertSecretName:               cfg.CertSecretName,
+		DbSecretName:                 cfg.DbSecretName,
 	}
 	return *templateData, nil
 }

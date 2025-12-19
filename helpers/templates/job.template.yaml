@@ -36,6 +36,8 @@ spec:
               value: {{ .ClientAccesToken }}
             - name: MAIL_UPLOADER_NAME
               value: "{{ .MailUploaderName }}"
+            - name: MAIL_UPLOADER_ORGANIZATION_NAME
+              value: "{{ .MailUploaderOrganizationName }}"
             - name: MAIL_UPLOADER
               value: {{ .MailUploader }}
             - name: MAIL_ADDRESS
