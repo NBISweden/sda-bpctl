@@ -16,7 +16,7 @@ JOB_EXPECTED_NR_FILES: 0
 CLIENT_API_HOST: "https://api.example.com"
 CLIENT_ACCESS_TOKEN: "youraccesstoken"
 
-# secrets to consume sensetive data from
+# secrets to consume sensitive data from
 DB_SECRET_NAME: "db-secret"
 CERT_SECRET_NAME: "cert-secret"
 
