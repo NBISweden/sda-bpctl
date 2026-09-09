@@ -1,66 +1,82 @@
-### Script description
+# Script description
+
 The `validator.sh` script can be used for
-- validating the folder structure of a dataset
-- validating all the metadata files against the xsd schemas
-- checking that all the files referenced in the `images.xml` file exist in the inbox
-- checking for exta or missing files in the inbox
-- adding the datset id in the `dataset.xml` file and replacing the original one
-- moving `PRIVATE` and `LANDING_PAGE` folders in the metadata bucket
-- create kubernetes job manifest and deploy the job in case of prod cluster
 
-### Running the script
-Before running the script, the admin should login to the vault.
-The validation works for both production and staging clusters but the atomatic ingestion
-process works **ONLY** for the production cluster.
+- Validating the folder structure of a dataset
+- Validating all the metadata files against the xsd schemas
+- Checking that all the files referenced in the `images.xml` file exist in the inbox
+- Checking for exta or missing files in the inbox
+- Adding the datset id in the `dataset.xml` file and replacing the original one
+- Moving `PRIVATE` and `LANDING_PAGE` folders in the metadata bucket
+- Creating Kubernetes job manifest and deploy the job in case of prod cluster
 
-#### Validation only
-The script works for both prod and stage clusters and can be run with the following command:
+## Prerequisites & Working Directory Recommendation
 
-```bash
-./validator.sh -c <prod-or-staging> -u <username> -d <dataset-folder> --validation-only
-```
+Before running the script, ensure you are logged into Vault and that `bpctl` is available in your `$PATH`.
 
-where:
-- `prod-or-staging` is the cluster where the dataset is located
-- `username` is the username folder name in inbox
-- `dataset-folder` is the dataset folder which should be in the form `DATASET_{identifier}`.
+### Recommended Directory Setup:
 
-To perform a dry run, which simulates the script execution without making any changes, include the --dry-run option. The data will still be downloaded to the local machine.
+It is strongly recommended to isolate each dataset run by creating a separate working directory named after the `DATASET_FOLDER` (e.g., `DATASET_aaaaaaa`) and running the script from within that directory or passing WORKDIR:
 
 ```bash
-./validator.sh -c <prod-or-staging> -u <username> -d <dataset-folder> --dry-run
+mkdir DATASET_aaaaaaa
+cd DATASET_aaaaaaa
+/path/to/validator.sh -c prod -u <username> -d DATASET_aaaaaaa --dry-run
 ```
 
-In that case, the script will not modify the dataset.xml file and it will not move the `PRIVATE` and `LANDING_PAGE` folders
-in the metadata bucket if the validation is **successfull**.
+## Standard Workflow
 
-After a successfull run, the admin can remove all the files from the local machine (except the `dataset_id.txt` file)
-by running the following command:
+The recommended standard workflow consists of two main steps:
+
+1. Dry Run (Pass 1): Run the script with the `--dry-run` flag first to verify dataset structure and metadata without altering files or moving data.
+2. Ingestion (Pass 2): Run the script again **without** the `--dry-run` flag to execute the full modification, metadata transfer, and job deployment.
+
+## Running the script
+
+### Step 1: Validation / Dry Run Check
+
+Run a dry run to check whether the validation for the dataset passes. The data will be downloaded to your local working directory for evaluation, but no files will be permanently modified or moved in S3.
 
 ```bash
-./validator.sh --clean
+/path/to/validator.sh -c <prod-or-staging> -u <username> -d <dataset-folder> --dry-run
 ```
 
-#### Validation and ingestion
-Since in the case a kubernetes job will be deployed then the user needs to set the kubeconfig file:
+Parameters:
+
+- `-c`: Cluster name (prod or staging)
+- `-u`: Username folder in the inbox
+- `-d`: Dataset folder name (must follow the pattern DATASET_{identifier})
+
+>**Note:** If you only need to run schema validation without checking deployment parameters, you can also use `--validation-only`.
+
+After completing a dry run or clean-up, you should clear temporary files generated in your WORKDIR by running:
 
 ```bash
-export KUBECONFIG=path/to/kubeconfig/yaml/file
+/path/to/validator.sh --clean
 ```
 
-The ingestion works **ONLY** for the production cluster and can by run with the following command:
+### Step 2: Full Ingestion
+
+Once the dry run passes successfully, run the script **without** `--dry-run` to proceed with dataset modification, metadata movement, and automated ingestion setup.
+Ensure your `KUBECONFIG` is exported (required for production deployment):
 
 ```bash
-./validator.sh -c prod -u <username> -d <dataset-folder> -n <full-name> -e <email> -t <admin-token>
+export KUBECONFIG=/path/to/kubeconfig.yaml
 ```
 
-where:
-- `prod` is the cluster where the dataset is located
-- `username` is the username folder name in inbox
-- `dataset-folder` is the dataset folder which should be in the form `DATASET_{identifier}`.
-- `full-name` is the first and last name of the uploader as it is in the ticket
-- `email` is the email address of the uploader
-- `admin-token` is the download token which allows interaction with the admin API 
+Trigger the ingestion process:
 
-After the validation a kubernetes manifest (yaml file) will be created with the name of the dataset folder.
+```bash
+/path/to/validator.sh -c prod -u <username> -d <dataset-folder> -n "<uploader-name>" -e <uploader-email> -t <admin-token>
+```
 
+Parameters:
+
+- `-c`: Must be `prod` (automated ingestion works **ONLY** for production)
+- `-u`: Username folder name in the inbox
+- `-d`: Dataset folder name (`DATASET_{identifier}`)
+- `-n`: Full name of the uploader (as listed in the ticket)
+- `-e`: Email address of the uploader
+- `-t`: Download token for accessing the Admin API
+
+Upon completion, a Kubernetes manifest (`<dataset-folder>.yaml`) will be generated in your working directory and applied to the `sda-prod` cluster.
