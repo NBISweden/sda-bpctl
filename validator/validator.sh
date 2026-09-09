@@ -1,7 +1,15 @@
 #!/bin/bash
 
+# Resolve absolute directory of this script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Set working directory (defaults to current directory if not set)
+WORKDIR="${WORKDIR:-$(pwd)}"
+
+# Define terminal reset variable
+reset="\033[0m"
+
 # Function for echoing colored text
-# At the end it resets the color to default
 cecho() {
     local color="$1"
     local text="$2"
@@ -49,7 +57,12 @@ if [ ! "$(command -v kubectl)" ];then
     exit 1
 fi
 
-# Determine whic crypt4gh version the user has (python or go)
+if [ ! "$(command -v bpctl)" ];then
+    cecho red "bpctl command does not exist"
+    exit 1
+fi
+
+# Determine which crypt4gh version the user has (python or go)
 C4GHGEN=$(crypt4gh generate 2>&1)
 if [[ $C4GHGEN != *"the required flag"* ]]; then
     c4gh_decrypt() {
@@ -88,7 +101,7 @@ else
     sed_i_bak() { sed -i.bak "$@"; }
 fi
 
-if [ ! "$(command -v $NUMFMT)" ];then
+if [ ! "$(command -v "$NUMFMT")" ];then
     cecho red "$NUMFMT command does not exist. On macOS, you can install it with 'brew install coreutils'."
     exit 1
 fi
@@ -99,7 +112,7 @@ crypt4gh_current_version=$(crypt4gh -v)
 if [ "$(printf '%s\n' "$crypt4gh_required_version" "$crypt4gh_current_version" | sort -V | head -n 1)" != "$crypt4gh_required_version" ]; then
     cecho red "crypt4gh version must be at least $crypt4gh_required_version (found $crypt4gh_current_version)"
     exit 1
-fi  
+fi
 INBOX_ACCESS_KEY=""
 INBOX_SECRET_KEY=""
 HOST_BUCKET=""
@@ -139,25 +152,18 @@ END_USAGE
 }
 
 # Function for cleaning up the files that are created by the script
-# - Removes the xsd and xml folders
-# - Removes the crypt4gh private key
-# - Removes the crypt4gh private key passphrase from env
-# - Removes the json files
-# - Removes the public key
-# - Removes the error files
-# - Removes the general_errors.logs file
 function cleanup {
     cecho yellow "Cleaning up ..."
 
-    rm -rf xsd-files xml-files PRIVATE LANDING_PAGE
+    rm -rf "$WORKDIR/xsd-files" "$WORKDIR/xml-files" "$WORKDIR/PRIVATE" "$WORKDIR/LANDING_PAGE"
 
     unset C4GH_PASSPHRASE
 
-    rm -f bp_key.pub
+    rm -f "$WORKDIR/bp_key.pub"
 
-    rm -f general_errors.logs
+    rm -f "$WORKDIR/general_errors.logs"
 
-    rm -f *.error
+    rm -f "$WORKDIR"/*.error
 
     cecho green "Done"
 
@@ -166,7 +172,7 @@ function cleanup {
 
 function remove_private_key {
     cecho yellow "Removing private key ..."
-    rm -f c4gh.sec.pem
+    rm -f "$WORKDIR/c4gh.sec.pem"
     cecho green "Private key removed"
 }
 
@@ -266,18 +272,15 @@ function sanitize_user_dataset {
 }
 
 # Function for getting the xsd files from github repo
-# - Gets the download urls of the xsd files from github api
-# - Downloads the xsd files by using the download urls
-# - Puts the files in the xsd-files directory
 function get_xsd_files {
     cecho yellow "Getting xsd files ..."
-    mkdir -p xsd-files
+    mkdir -p "$WORKDIR/xsd-files"
 
     curl -H "Accept: application/vnd.github.v3+json" \
        https://api.github.com/repos/imi-bigpicture/bigpicture-metaflex/contents/src?ref=$version.0.0 | jq -r '.[] | .download_url' |
     while IFS= read -r url; do
         xsd_name=$(basename "$url")
-        curl -o "xsd-files/${xsd_name%\?*}" -J -L "$url" >/dev/null 2>&1
+        curl -o "$WORKDIR/xsd-files/${xsd_name%\?*}" -J -L "$url" >/dev/null 2>&1
     done
 
     cecho green "Done"
@@ -328,14 +331,11 @@ function get_credentials {
 function validate_private_files {
     cecho yellow "Validating PRIVATE files ..."
     private_files=("$@")
-    # Depending on the version the expected private files are different
-    # If the number of private files is not the expected then exit
     if [[ $version == "v1" ]]; then
         expected_private_files=("DAC" "submission")
         cecho yellow "Expected private files: ${expected_private_files[*]}"
-        # check the length is 2
         if [[ ${#private_files[@]} -ne 2 ]]; then
-            cecho red "ERROR: The number of private files is not 2" | tee -a general_errors.logs
+            cecho red "ERROR: The number of private files is not 2" | tee -a "$WORKDIR/general_errors.logs"
             ERROR_STATUS=1
         fi
     else
@@ -346,15 +346,21 @@ function validate_private_files {
             expected_private_files=("rems" "organisation" "datacite")
             cecho yellow "Expected private files: ${expected_private_files[*]}"
         else
-            cecho red "ERROR: The number of private files are not 2 or 3" | tee -a general_errors.logs
+            cecho red "ERROR: The number of private files are not 2 or 3" | tee -a "$WORKDIR/general_errors.logs"
             ERROR_STATUS=1
         fi
     fi
 
-    # Check if the expected_private_files exist in the private_files
     for private_file in "${expected_private_files[@]}"; do
-        if [[ ! " ${private_files[@]} " =~ " ${private_file}."* ]]; then
-            cecho red "ERROR: Private file $private_file is missing" | tee -a general_errors.logs
+        local found=false
+        for pf in "${private_files[@]}"; do
+            if [[ "$pf" == "${private_file}."* ]]; then
+                found=true
+                break
+            fi
+        done
+        if [[ "$found" == false ]]; then
+            cecho red "ERROR: Private file $private_file is missing" | tee -a "$WORKDIR/general_errors.logs"
             ERROR_STATUS=1
         fi
     done
@@ -367,44 +373,56 @@ function validate_files {
     inbox_metadata_files=$(for bucket in "${INBOX_BUCKETS[@]}"; do
         s3cmd_command ls "s3://${bucket}/${user}/${dataset}/METADATA/" 2>/dev/null
     done | awk -F'_lifescience-ri.eu/|_elixir-europe.org/' '{print $2}' | cut -d'/' -f3 | sort -u | tr '\n' ' ')
-    # Convert multiple lines to array
-    read -a metadata_files <<<"$inbox_metadata_files"
+    read -r -a metadata_files <<<"$inbox_metadata_files"
     inbox_private_files=$(for bucket in "${INBOX_BUCKETS[@]}"; do
         s3cmd_command ls "s3://${bucket}/${user}/${dataset}/PRIVATE/" 2>/dev/null
     done | awk -F'_lifescience-ri.eu/|_elixir-europe.org/' '{print $2}' | cut -d'/' -f3 | sort -u | tr '\n' ' ')
-    # Convert multiple lines to array
-    read -a metadata_private_files <<<"$inbox_private_files"
-    # if the folder ANNOTATIONS is missing, make sure annotation.xml and observer.xml are not present
+    read -r -a metadata_private_files <<<"$inbox_private_files"
     if [[ "$1" == "false" ]]; then
-        # Remove the annotation and observer from the expected_metadata_content
         unset 'expected_metadata_content[3]'
         expected_metadata_content=("${expected_metadata_content[@]}")
-        # Check if "annotation" or "observer" is in the meatadata_files
-        if [[ " ${metadata_files[@]} " =~ "annotation" ]]; then
-            cecho red "ERROR: 'annotation.xml' should not exist because the 'ANNOTATIONS' directory is missing." | tee -a general_errors.logs
+        local has_annotation=false
+        for mf in "${metadata_files[@]}"; do
+            if [[ "$mf" == "annotation"* ]]; then
+                has_annotation=true
+                break
+            fi
+        done
+        if [[ "$has_annotation" == true ]]; then
+            cecho red "ERROR: 'annotation.xml' should not exist because the 'ANNOTATIONS' directory is missing." | tee -a "$WORKDIR/general_errors.logs"
             ERROR_STATUS=1
         fi
     fi
-    
-    # Check if any metadata files are missing
+
     for expected_metadata in "${expected_metadata_content[@]}"; do
-        if [[ ! " ${metadata_files[@]} " =~ " ${expected_metadata}."* ]]; then
-            cecho red "ERROR: Metadata file $expected_metadata is missing" | tee -a general_errors.logs
+        local found=false
+        for mf in "${metadata_files[@]}"; do
+            if [[ "$mf" == "${expected_metadata}."* ]]; then
+                found=true
+                break
+            fi
+        done
+        if [[ "$found" == false ]]; then
+            cecho red "ERROR: Metadata file $expected_metadata is missing" | tee -a "$WORKDIR/general_errors.logs"
             ERROR_STATUS=1
         fi
     done
 
-    # Check if there are any extra metadata files
     for metadata_file in "${metadata_files[@]}"; do
-        # Keep only the basename of the file without the extension
         file_basename=$(basename "$metadata_file" | cut -d'.' -f1)
-        # If the metadata file is the observer then continue because it is not mandatory
         if [[ "$file_basename" == "observer" ]]; then
             continue
         fi
-        if [[ ! " ${expected_metadata_content[@]} " =~ " ${file_basename}."* ]]; then
+        local matched=false
+        for emc in "${expected_metadata_content[@]}"; do
+            if [[ "$metadata_file" == "${emc}."* ]]; then
+                matched=true
+                break
+            fi
+        done
+        if [[ "$matched" == false ]]; then
             extra_metadata_files+=("$metadata_file")
-            cecho red "ERROR: Extra metadata file $metadata_file found" | tee -a general_errors.logs
+            cecho red "ERROR: Extra metadata file $metadata_file found" | tee -a "$WORKDIR/general_errors.logs"
             ERROR_STATUS=1
         fi
     done
@@ -423,27 +441,34 @@ function validate_structure {
     inbox_subfolders=$(for bucket in "${INBOX_BUCKETS[@]}"; do
         s3cmd_command ls "s3://${bucket}/${user}/${dataset}/" 2>/dev/null
     done | awk -F'_lifescience-ri.eu/|_elixir-europe.org/' '{print $2}' | cut -d'/' -f2 | sort -u)
-    # Convert multiple lines to array
     IFS=$'\n' read -r -d '' -a subfolders <<<"$inbox_subfolders"$'\n'
     expected_subfolders=("METADATA" "IMAGES" "ANNOTATIONS" "PRIVATE" "LANDING_PAGE")
-    # Check if the main folder starts with "DATASET_"
     if [[ "$main_folder" != "DATASET_"* ]]; then
-        cecho red "ERROR: Main folder does not start with DATASET_" | tee -a general_errors.logs
+        cecho red "ERROR: Main folder does not start with DATASET_" | tee -a "$WORKDIR/general_errors.logs"
         ERROR_STATUS=1
     fi
 
-    # Check if annotations folder exists in the subfolders
-    # If it does not then remove it from the expected_subfolders
-    if [[ ! " ${subfolders[@]} " =~ "ANNOTATIONS" ]]; then
+    local has_annotations=false
+    for sf in "${subfolders[@]}"; do
+        if [[ "$sf" == "ANNOTATIONS" ]]; then
+            has_annotations=true
+            break
+        fi
+    done
+    if [[ "$has_annotations" == false ]]; then
         unset 'expected_subfolders[2]'
         expected_subfolders=("${expected_subfolders[@]}")
         annotations=false
     fi
-    
-    # Check if landing pages folder exists in the subfolders
-    # If it does not then remove it from the expected_subfolders
-    # If it exists, check if THUMBNAILS folder exists and contains files
-    if [[ ! " ${subfolders[@]} " =~ "LANDING_PAGE" ]]; then
+
+    local has_landing_page=false
+    for sf in "${subfolders[@]}"; do
+        if [[ "$sf" == "LANDING_PAGE" ]]; then
+            has_landing_page=true
+            break
+        fi
+    done
+    if [[ "$has_landing_page" == false ]]; then
         if [[ "$annotations" == "false" ]]; then
             unset 'expected_subfolders[3]'
             expected_subfolders=("${expected_subfolders[@]}")
@@ -456,31 +481,34 @@ function validate_structure {
             s3cmd_command ls "s3://${bucket}/${user}/${dataset}/LANDING_PAGE/THUMBNAILS/" --recursive 2>/dev/null
         done | awk '{print $4}' | sort -u | wc -l)
         if [[ "$thumbnail_files" -eq 0 ]]; then
-            cecho red "ERROR: THUMBNAILS folder is missing or empty" | tee -a general_errors.logs
+            cecho red "ERROR: THUMBNAILS folder is missing or empty" | tee -a "$WORKDIR/general_errors.logs"
             ERROR_STATUS=1
         fi
         LANDING_PAGE=true
     fi
 
-    # Check if landing page folder is empty in case it exists
     if [[ "$LANDING_PAGE" == "true" ]]; then
         landing_page_files=$(for bucket in "${INBOX_BUCKETS[@]}"; do
             s3cmd_command ls "s3://${bucket}/${user}/${dataset}/LANDING_PAGE/" --recursive 2>/dev/null
         done | awk '{print $4}' | sort -u | wc -l)
         if [[ "$landing_page_files" -eq 0 ]]; then
-            cecho red "ERROR: LANDING_PAGE folder is empty" | tee -a general_errors.logs
+            cecho red "ERROR: LANDING_PAGE folder is empty" | tee -a "$WORKDIR/general_errors.logs"
             ERROR_STATUS=1
         fi
     fi
 
-    # Compare the two arrays of subfolders and expected_subfolders
-    # and print if they are not the same
     local extra_subfolders=()
     local missing_subfolders=()
     for expected_subfolder in "${expected_subfolders[@]}"; do
-        if [[ ! " ${subfolders[@]} " =~ " ${expected_subfolder} " ]]; then
+        local found=false
+        for sf in "${subfolders[@]}"; do
+            if [[ "$sf" == "$expected_subfolder" ]]; then
+                found=true
+                break
+            fi
+        done
+        if [[ "$found" == false ]]; then
             missing_subfolders+=("$expected_subfolder")
-            # If the missing subfolder is "PRIVATE" then set the PRIVATE_FOLDER to false
             if [[ "$expected_subfolder" == "PRIVATE" ]]; then
                 PRIVATE_FOLDER=false
             fi
@@ -488,18 +516,25 @@ function validate_structure {
     done
 
     for subfolder in "${subfolders[@]}"; do
-        if [[ ! " ${expected_subfolders[@]} " =~ " ${subfolder} " ]]; then
+        local found=false
+        for esf in "${expected_subfolders[@]}"; do
+            if [[ "$subfolder" == "$esf" ]]; then
+                found=true
+                break
+            fi
+        done
+        if [[ "$found" == false ]]; then
             extra_subfolders+=("$subfolder")
         fi
     done
 
     if [[ ${#extra_subfolders[@]} -ne 0 ]]; then
-        cecho red "ERROR: Extra subfolders found: ${extra_subfolders[*]}" | tee -a general_errors.logs
+        cecho red "ERROR: Extra subfolders found: ${extra_subfolders[*]}" | tee -a "$WORKDIR/general_errors.logs"
         ERROR_STATUS=1
     fi
 
     if [[ ${#missing_subfolders[@]} -ne 0 ]]; then
-        cecho red "ERROR: Missing subfolders: ${missing_subfolders[*]}" | tee -a general_errors.logs
+        cecho red "ERROR: Missing subfolders: ${missing_subfolders[*]}" | tee -a "$WORKDIR/general_errors.logs"
         ERROR_STATUS=1
     fi
 
@@ -510,33 +545,31 @@ function validate_structure {
 
 # Function for downloading the xml metadata files from the inbox
 function get_xml_files {
-    mkdir -p xml-files
+    mkdir -p "$WORKDIR/xml-files"
     cecho yellow "Getting xml files ..."
     for bucket in "${INBOX_BUCKETS[@]}"; do
         metadata_path=$(s3cmd_command ls "s3://${bucket}/${user}/${dataset}/" 2>/dev/null | grep -i METADATA | awk '{print $2}')
         private_path=$(s3cmd_command ls "s3://${bucket}/${user}/${dataset}/" 2>/dev/null | grep -i PRIVATE | awk '{print $2}')
         if [[ -n "$metadata_path" ]]; then
-            s3cmd_command get "$metadata_path" --recursive xml-files/ >/dev/null 2>&1
+            s3cmd_command get "$metadata_path" --recursive "$WORKDIR/xml-files/" >/dev/null 2>&1
         fi
         if [[ -n "$private_path" ]]; then
-            s3cmd_command get "$private_path" --recursive xml-files/ >/dev/null 2>&1
+            s3cmd_command get "$private_path" --recursive "$WORKDIR/xml-files/" >/dev/null 2>&1
         fi
     done
     if [[ "$LANDING_PAGE" == "true" ]]; then
         for bucket in "${INBOX_BUCKETS[@]}"; do
             landing_page_path="s3://${bucket}/${user}/${dataset}/LANDING_PAGE/landing_page.xml"
-            s3cmd_command get "$landing_page_path" --recursive xml-files/ >/dev/null 2>&1
+            s3cmd_command get "$landing_page_path" --recursive "$WORKDIR/xml-files/" >/dev/null 2>&1
         done
-        # Throw error if the landing_page.xml file does not exist
-        if [[ ! -f xml-files/landing_page.xml.c4gh ]]; then
-            cecho red "ERROR: landing_page.xml is missing" | tee -a general_errors.logs
+        if [[ ! -f "$WORKDIR/xml-files/landing_page.xml.c4gh" ]]; then
+            cecho red "ERROR: landing_page.xml is missing" | tee -a "$WORKDIR/general_errors.logs"
             ERROR_STATUS=1
             LANDING_PAGE=false
         fi
     fi
 
-    # Check if the folder xml-files is empty
-    if [ -z "$(ls -A xml-files)" ]; then
+    if [ -z "$(ls -A "$WORKDIR/xml-files")" ]; then
         cecho red "ERROR: Metadata folder is empty. Check if the path of the metadata folder in inbox is where it should be"
         ERROR_STATUS=1
     fi
@@ -544,29 +577,24 @@ function get_xml_files {
 }
 
 # Function for decrypting the xml file
-# - Gets the crypt4gh private key from vault
-# - Checks if the crypt4gh is the python or golang version
-# - Decrypts all the files that are in the xml-files folder
 function decrypt_xml_files {
     cecho yellow "Decrypting xml files ..."
     export C4GH_PASSPHRASE
-    vault kv get -field=private_key bp-secrets/crypt4gh > c4gh.sec.pem
+    vault kv get -field=private_key bp-secrets/crypt4gh > "$WORKDIR/c4gh.sec.pem"
 
-    for xml_file in xml-files/*.c4gh; do
-        if ! c4gh_decrypt c4gh.sec.pem "$xml_file"; then
+    for xml_file in "$WORKDIR"/xml-files/*.c4gh; do
+        if ! c4gh_decrypt "$WORKDIR/c4gh.sec.pem" "$xml_file"; then
             cecho red "ERROR: Decryption failed for $xml_file"
             ERROR_STATUS=1
         fi
     done
-    rm xml-files/*.c4gh
+    rm "$WORKDIR"/xml-files/*.c4gh
     cecho green "Done"
 }
 
 # Function for finding the metadata version
-# - Checks if the METADATA_STANDARD tag exists in the dataset.xml file
-# - If it does exist then the metadata version is v2
 function find_metadata_version {
-    xml_version=$(xmllint --xpath 'string(/DATASET_SET/DATASET/METADATA_STANDARD)' xml-files/dataset.xml)
+    xml_version=$(xmllint --xpath 'string(/DATASET_SET/DATASET/METADATA_STANDARD)' "$WORKDIR/xml-files/dataset.xml")
     if [[ "$xml_version" == "" ]]; then
         version="v1"
         cecho green "Metadata version is v1"
@@ -575,44 +603,35 @@ function find_metadata_version {
         version="v2"
     fi
 }
-# Function for validating xml files with xsd.
-# - It creates a list of all xsd files and a list of all xml files.
-# - Loops over all xml files (ignoring the c4gh files) and extracts the root element name.
-# - For each xml file it loops over the xsd files (starting from the "BP" ones and ignoring
-#   the common and schema), gets all the top level elements and if the root element of the
-#   xml file matches one of the top level element of the xsd file, then it validates the
-#   xml file with the xsd file.
-# TODO: check if there are only the xml files that should be present in the xml-files folder.
-# This can be done if a final decision is made about the names of the xml files.
+
 function validate_with_xsd_v1 {
     cecho yellow "Validation started..."
     error_flag=0
-    for xml in xml-files/*; do
+    for xml in "$WORKDIR"/xml-files/*; do
         validate="false"
         rootElement=$(xmllint --xpath "name(/*)" "$xml")
 
-        for xsd in xsd-files/BP.*.xsd; do
+        for xsd in "$WORKDIR"/xsd-files/BP.*.xsd; do
             if [[ "$xsd" =~ common|schema ]]; then
                 continue
             fi
-            topLevelElements=$(xmllint --xpath "/*[local-name()='schema']/*[local-name()='element']/@name" $xsd 2>/dev/null | tr ' ' '\n' | cut -d'"' -f2)
+            topLevelElements=$(xmllint --xpath "/*[local-name()='schema']/*[local-name()='element']/@name" "$xsd" 2>/dev/null | tr ' ' '\n' | cut -d'"' -f2)
             if [[ "$topLevelElements" == *"$rootElement"* ]]; then
                 validate="true"
                 cecho yellow "Validating $xml with $xsd"
                 if ! xmllint --noout --schema "$xsd" "$xml" >/dev/null 2>&1; then
-                    touch "$rootElement".error
-                    echo "$(xmllint --schema "$xsd" "$xml" 2>&1)" > "$rootElement".error
+                    xmllint --schema "$xsd" "$xml" > "$WORKDIR/$rootElement.error" 2>&1
                     validate="failed"
                 fi
             fi
         done
 
         if [ "$validate" = "false" ]; then
-            for xsd in xsd-files/*.xsd; do
+            for xsd in "$WORKDIR"/xsd-files/*.xsd; do
                 if [[ "$(basename "$xsd")" =~ ^BP\.|common|schema ]]; then
                     continue
                 fi
-                topLevelElements=$(xmllint --xpath "/*[local-name()='schema']/*[local-name()='element']/@name" $xsd 2>/dev/null | tr ' ' '\n' | cut -d'"' -f2)
+                topLevelElements=$(xmllint --xpath "/*[local-name()='schema']/*[local-name()='element']/@name" "$xsd" 2>/dev/null | tr ' ' '\n' | cut -d'"' -f2)
                 if [[ "$topLevelElements" == *"$rootElement"* ]]; then
                     validate="true"
                     cecho yellow "Validating $xml with $xsd"
@@ -646,20 +665,17 @@ function validate_with_xsd_v1 {
 function validate_with_xsd_v2 {
     cecho yellow "Validation for xml files started..."
     error_flag=0
-    for xml in xml-files/*; do
-        # Remove folder and extension from the xml file
+    for xml in "$WORKDIR"/xml-files/*; do
         xml_base=$(basename "$xml")
         xml_name=$(echo "$xml_base" | cut -d'.' -f1)
-        for xsd in xsd-files/*.xsd; do
-            # Remove folder, extension and prefix from the xsd file
+        for xsd in "$WORKDIR"/xsd-files/*.xsd; do
             xsd_base=$(basename "$xsd")
             xsd_name=$(echo "$xsd_base" | cut -d'.' -f2)
             if [[ "$xsd_name" == "$xml_name" ]]; then
                 cecho yellow "Validating $xml with $xsd"
                 if ! xmllint --noout --schema "$xsd" "$xml" >/dev/null 2>&1; then
-                    cecho red "ERROR: Validation failed for $xml" | tee -a general_errors.logs
-                    touch "$xml_name".error
-                    echo "$(xmllint --noout --schema "$xsd" "$xml" 2>&1)" > "$xml_name".error
+                    cecho red "ERROR: Validation failed for $xml" | tee -a "$WORKDIR/general_errors.logs"
+                    xmllint --noout --schema "$xsd" "$xml" > "$WORKDIR/$xml_name.error" 2>&1
 
                     error_flag=1
                 fi
@@ -671,11 +687,9 @@ function validate_with_xsd_v2 {
     else
         cecho green "Validation succeeded for xml files"
     fi
-
 }
 
 # Returns lines in $1 not present in $2.
-# Both lists must contain unique entries; $2 should be pre-sorted for efficiency.
 function check_files {
     comm -23 <(sort <<< "$1") <(sort <<< "$2")
 }
@@ -696,48 +710,37 @@ function check_file_sizes {
     fi
 }
 
-# Function for checking the metadata and inbox files.
-# - Gets a list of all the dataset filepaths in the inbox
-# - Counts only the files in the IMAGES folder
-# - Parses the filenames from metadata and counts them
-# - Checks if the metadata list is empty and if it is, then exits
-# - Checks if the number of files in the inbox and in the metadata are equal
-# - If there are equal number of files, then it checks if the filenames from metadata exist in the inbox
-# - If they are not equal, it prints the extra or missing files and exits
 function comparing_files {
     cecho yellow "Checking files ..."
     all_inbox_files=$(for bucket in "${INBOX_BUCKETS[@]}"; do
         s3cmd_command ls "s3://${bucket}/${user}/${dataset}/" --recursive 2>/dev/null
     done | awk '{print $4}' | sort -u)
-    # Strip the S3 prefix and .c4gh suffix so paths match the relative paths stored in metadata (e.g. IMAGES/IMAGE_xxx/file.dcm)
-    # Pre-sort once so comm calls below don't need to re-sort the large list
     all_inbox_relative=$(echo "$all_inbox_files" | sed -E "s|s3://[^/]+/${user}/${dataset}/||" | sed 's/\.c4gh$//' | sort -u)
 
     count_inbox_files=$(echo "$all_inbox_relative" | grep -c '^IMAGES/')
 
-    for file in xml-files/*.xml; do
+    metadata_files_str=""
+    for file in "$WORKDIR"/xml-files/*.xml; do
         if [[ "$file" == *"image"* ]]; then
-            metadata_files=$(xmllint --xpath '/IMAGE_SET/IMAGE/FILES/FILE/@filename' "$file" | awk -F= '{print $2}' | sed 's/"//g')
+            metadata_files_str=$(xmllint --xpath '/IMAGE_SET/IMAGE/FILES/FILE/@filename' "$file" | awk -F= '{print $2}' | sed 's/"//g')
             break
         fi
     done
 
-    count_metadata_files=$(echo "$metadata_files" | wc -l | xargs)
-    # Replace backslashes in metadata filenames (in case they exist)
-    new_metadata_files=$(echo "$metadata_files" | sed 's/\\/\//g') 
-    
-    if [[ "$metadata_files" == "" ]]; then
-        cecho red "ERROR: No filenames found in metadata" | tee -a general_errors.logs
+    count_metadata_files=$(echo "$metadata_files_str" | wc -l | xargs)
+    new_metadata_files=$(echo "$metadata_files_str" | sed 's/\\/\//g')
+
+    if [[ "$metadata_files_str" == "" ]]; then
+        cecho red "ERROR: No filenames found in metadata" | tee -a "$WORKDIR/general_errors.logs"
         ERROR_STATUS=1
     elif [ "$count_inbox_files" -lt "$count_metadata_files" ]; then
-        cecho red "ERROR: There are more files in metadata than the ones that exist in the inbox (inbox=$count_inbox_files, metadata=$count_metadata_files)" | tee -a general_errors.logs
+        cecho red "ERROR: There are more files in metadata than the ones that exist in the inbox (inbox=$count_inbox_files, metadata=$count_metadata_files)" | tee -a "$WORKDIR/general_errors.logs"
         echo "The missing files in the inbox are:"
         missing_inbox_files=$(check_files "$new_metadata_files" "$all_inbox_relative")
         echo "$missing_inbox_files"
         ERROR_STATUS=1
     elif [ "$count_inbox_files" -gt "$count_metadata_files" ]; then
-        cecho red "ERROR: There are more files in the inbox than the ones that are referenced in metadata (inbox=$count_inbox_files, metadata=$count_metadata_files)" | tee -a general_errors.logs
-        # Modify all_inbox_files to contain only the parts that are referenced in metadata
+        cecho red "ERROR: There are more files in the inbox than the ones that are referenced in metadata (inbox=$count_inbox_files, metadata=$count_metadata_files)" | tee -a "$WORKDIR/general_errors.logs"
         inbox_images_files=$(echo "$all_inbox_relative" | grep '^IMAGES/IMAGE_')
         extra_inbox_relative=$(check_files "$inbox_images_files" "$new_metadata_files")
         extra_inbox_files=$(awk -F'\t' 'NR==FNR { if (NF) wanted[$1]=1; next } wanted[$2] { print $1 }' \
@@ -758,42 +761,40 @@ function comparing_files {
     else
         matching_files=$(check_files "$new_metadata_files" "$all_inbox_relative")
         if [ -n "$matching_files" ]; then
-            cecho red "ERROR: The following files were not found in inbox:" | tee -a general_errors.logs
-            echo "$matching_files" | tee -a general_errors.logs
+            cecho red "ERROR: The following files were not found in inbox:" | tee -a "$WORKDIR/general_errors.logs"
+            echo "$matching_files" | tee -a "$WORKDIR/general_errors.logs"
             ERROR_STATUS=1
         else
             cecho green "All files listed in the metadata files are present in the inbox"
         fi
     fi
 
-    # Check the thumbnails files
     if [[ "$LANDING_PAGE" == "true" ]]; then
         all_thumbnail_files=$(for bucket in "${INBOX_BUCKETS[@]}"; do
             s3cmd_command ls "s3://${bucket}/${user}/${dataset}/LANDING_PAGE/THUMBNAILS/" --recursive 2>/dev/null
         done | awk '{print $4}' | sort -u)
         all_thumbnail_relative=$(echo "$all_thumbnail_files" | sed -E "s|s3://[^/]+/${user}/${dataset}/||" | sed 's/\.c4gh$//' | sort -u)
         count_inbox_thumbnail_files=$(echo "$all_thumbnail_relative" | sed '/^$/d' | wc -l)
-        metadata_thumbnail_files=$(xmllint --xpath '/LANDING_PAGE_SET/LANDING_PAGE/SAMPLE_IMAGE_FILES/SAMPLE_IMAGE_FILE/@filename' xml-files/landing_page.xml | awk -F= '{print $2}' | sed 's/"//g')
+        metadata_thumbnail_files=$(xmllint --xpath '/LANDING_PAGE_SET/LANDING_PAGE/SAMPLE_IMAGE_FILES/SAMPLE_IMAGE_FILE/@filename' "$WORKDIR/xml-files/landing_page.xml" | awk -F= '{print $2}' | sed 's/"//g')
         count_metadata_thumbnail_files=$(echo "$metadata_thumbnail_files" | wc -l)
-        if [[ "metadata_thumbnail_files" == "" ]]; then
-            cecho red "ERROR: No filenames found in metadata for thumbnails" | tee -a general_errors.logs
+        if [[ "$metadata_thumbnail_files" == "" ]]; then
+            cecho red "ERROR: No filenames found in metadata for thumbnails" | tee -a "$WORKDIR/general_errors.logs"
             ERROR_STATUS=1
         elif [ "$count_inbox_thumbnail_files" -lt "$count_metadata_thumbnail_files" ]; then
-            cecho red "ERROR: There are more thumbnail files in metadata than the ones that exist in the inbox (inbox=$count_inbox_thumbnail_files, metadata=$count_metadata_thumbnail_files)" | tee -a general_errors.logs
+            cecho red "ERROR: There are more thumbnail files in metadata than the ones that exist in the inbox (inbox=$count_inbox_thumbnail_files, metadata=$count_metadata_thumbnail_files)" | tee -a "$WORKDIR/general_errors.logs"
             echo "The missing files in the inbox are:"
             missing_inbox_files=$(check_files "$metadata_thumbnail_files" "$all_thumbnail_relative")
             echo "$missing_inbox_files"
             ERROR_STATUS=1
         elif [ "$count_inbox_thumbnail_files" -gt "$count_metadata_thumbnail_files" ]; then
-            cecho red "ERROR: There are more thumbnail files in the inbox than the ones that are referenced in metadata (inbox=$count_inbox_thumbnail_files, metadata=$count_metadata_thumbnail_files)" | tee -a general_errors.logs
-            # Modify all_thumbnail_files to contain only the parts that are referenced in metadata
-            inbox_thumbnail_files=$(echo "$all_thumbnail_relative" | sed 's|LANDING_PAGE/THUMBNAILS/||')
+            cecho red "ERROR: There are more thumbnail files in the inbox than the ones that are referenced in metadata (inbox=$count_inbox_thumbnail_files, metadata=$count_metadata_thumbnail_files)" | tee -a "$WORKDIR/general_errors.logs"
+            inbox_thumbnail_files="${all_thumbnail_relative//LANDING_PAGE\/THUMBNAILS\//}"
             extra_inbox_relative=$(check_files "$inbox_thumbnail_files" "$metadata_thumbnail_files")
             extra_inbox_files=$(awk -F'\t' 'NR==FNR { if (NF) wanted[$1]=1; next } wanted[$2] { print $1 }' \
                 <(printf '%s\n' "$extra_inbox_relative") \
                 <(paste \
                     <(echo "$all_thumbnail_files") \
-                    <(echo "$all_thumbnail_relative" | sed 's|LANDING_PAGE/THUMBNAILS/||')))
+                    <(echo "${all_thumbnail_relative//LANDING_PAGE\/THUMBNAILS\//}")))
             length_extra_files=$(echo "$extra_inbox_relative" | sed '/^$/d' | wc -l)
             missing_files_diff=$((count_inbox_thumbnail_files - count_metadata_thumbnail_files))
             if [ "$length_extra_files" -eq "$missing_files_diff" ]; then
@@ -807,8 +808,8 @@ function comparing_files {
         else
             matching_files=$(check_files "$metadata_thumbnail_files" "$all_thumbnail_relative")
             if [ -n "$matching_files" ]; then
-                cecho red "ERROR: The following thumbnail files were not found in inbox:" | tee -a general_errors.logs
-                echo "$matching_files" | tee -a general_errors.logs
+                cecho red "ERROR: The following thumbnail files were not found in inbox:" | tee -a "$WORKDIR/general_errors.logs"
+                echo "$matching_files" | tee -a "$WORKDIR/general_errors.logs"
                 ERROR_STATUS=1
             else
                 cecho green "All metadata thumbnail files are present in the inbox"
@@ -817,37 +818,26 @@ function comparing_files {
     fi
 }
 
-# Function for generating dataset ids (e.g: aa-Dataset-v5y9hk-nc2rfu)
 function generate_dataset_id {
-    local part_one=$(LC_ALL=C tr -dc 'abcdefghjkmnpqrstuvwxyz23456789' </dev/urandom | head -c 6)
-    local part_two=$(LC_ALL=C tr -dc 'abcdefghjkmnpqrstuvwxyz23456789' </dev/urandom | head -c 6)
+    local part_one
+    part_one=$(LC_ALL=C tr -dc 'abcdefghjkmnpqrstuvwxyz23456789' </dev/urandom | head -c 6)
+    local part_two
+    part_two=$(LC_ALL=C tr -dc 'abcdefghjkmnpqrstuvwxyz23456789' </dev/urandom | head -c 6)
 
     echo "aa-Dataset-$part_one-$part_two"
 }
 
-# Function for moving the metadata files from the inbox to the metadata bucket
-# - Gets the dataset id from the dataset_id.txt file
-# - Find the path of the folder in the inbox.
-# - In case of staging cluster:
-#       - Move the files from the inbox to the metadata bucket (stable id is in the file path).
-# - In case of prod cluster:
-#      - Create the folder.
-#      - Get the files from the inbox to the local folder.
-#      - Put the files in the metadata bucket.
-#      - Delete the files from the inbox.
-# - Check if the metadata files are moved by checking the size of the metadata folder
-#   and if the size is empty, then exit.
 function move_private_metadata {
     cecho yellow "Moving metadata ..."
 
-    stable_id=$(cat dataset_id.txt)
+    stable_id=$(cat "$WORKDIR/dataset_id.txt")
     metadata_inbox_paths=$(for bucket in "${INBOX_BUCKETS[@]}"; do
         s3cmd_command ls "s3://${bucket}/${user}/${dataset}/" 2>/dev/null | grep "PRIVATE" | awk '{print $2}'
     done)
-    metadata_bucket_path="s3://"$METADATA_BUCKET"/"$user"/"$stable_id"/"$dataset"/"PRIVATE"/"
+    metadata_bucket_path="s3://${METADATA_BUCKET}/${user}/${stable_id}/${dataset}/PRIVATE/"
 
     cecho yellow "Moving PRIVATE folder in metadata bucket"
-       
+
     if [[ "$cluster" == "staging" ]]; then
         while IFS= read -r metadata_inbox_path; do
             [[ -z "$metadata_inbox_path" ]] && continue
@@ -859,12 +849,12 @@ function move_private_metadata {
             exit 1
         fi
     else
-        mkdir -p "PRIVATE"
+        mkdir -p "$WORKDIR/PRIVATE"
         while IFS= read -r metadata_inbox_path; do
             [[ -z "$metadata_inbox_path" ]] && continue
-            s3cmd_command get "$metadata_inbox_path" --recursive "PRIVATE"/ >/dev/null 2>&1
+            s3cmd_command get "$metadata_inbox_path" --recursive "$WORKDIR/PRIVATE/" >/dev/null 2>&1
         done <<< "$metadata_inbox_paths"
-        s3cmd_metadata put "PRIVATE"/ "$metadata_bucket_path" --recursive
+        s3cmd_metadata put "$WORKDIR/PRIVATE/" "$metadata_bucket_path" --recursive
         metadata_size=$(s3cmd_metadata ls "$metadata_bucket_path" --recursive | awk '{print $3}')
         if [ -z "$metadata_size" ]; then
             cecho red "ERROR: Moving metadata failed"
@@ -879,56 +869,44 @@ function move_private_metadata {
     cecho green "Done"
 }
 
-# Function for modifying the dataset.xml file
-# - Checks if the dataset.xml file exists in the xml-files folder
-# - Adds the dataset stable id in the dataset.xml file
-# - Downloads the public key
-# - Encrypts the dataset.xml file
-# - Deletes the file from the metadata bucket
-# - Uploads the modified encrypted file to the metadata bucket
 function modify_dataset {
     cecho yellow "Modifying dataset.xml file ..."
 
     dataset_id=$(generate_dataset_id)
-    echo "$dataset_id" > dataset_id.txt
+    echo "$dataset_id" > "$WORKDIR/dataset_id.txt"
 
-    if [ ! -f "xml-files/dataset.xml" ]; then
+    if [ ! -f "$WORKDIR/xml-files/dataset.xml" ]; then
         cecho red "ERROR: dataset.xml file does not exist in xml-files folder"
         exit 1
     else
-        sed_i_bak -E "s/(<DATASET[^>]* alias=\"[^\"]*\")/\1 accession=\"$dataset_id\"/g" xml-files/dataset.xml
+        sed_i_bak -E "s/(<DATASET[^>]* alias=\"[^\"]*\")/\1 accession=\"$dataset_id\"/g" "$WORKDIR/xml-files/dataset.xml"
     fi
 
-    curl https://raw.githubusercontent.com/NBISweden/EGA-SE-user-docs/main/crypt4gh_bp_key.pub -o bp_key.pub
+    curl https://raw.githubusercontent.com/NBISweden/EGA-SE-user-docs/main/crypt4gh_bp_key.pub -o "$WORKDIR/bp_key.pub"
 
     export C4GH_PASSPHRASE
-    if ! c4gh_encrypt c4gh.sec.pem bp_key.pub xml-files/dataset.xml; then
+    if ! c4gh_encrypt "$WORKDIR/c4gh.sec.pem" "$WORKDIR/bp_key.pub" "$WORKDIR/xml-files/dataset.xml"; then
         cecho red "ERROR: Encryption failed"
         exit 1
     fi
 
     for bucket in "${INBOX_BUCKETS[@]}"; do
         s3cmd_command del "s3://${bucket}/${user}/${dataset}/METADATA/dataset.xml.c4gh"
-        s3cmd_command put xml-files/dataset.xml.c4gh "s3://${bucket}/${user}/${dataset}/METADATA/dataset.xml.c4gh"
+        s3cmd_command put "$WORKDIR/xml-files/dataset.xml.c4gh" "s3://${bucket}/${user}/${dataset}/METADATA/dataset.xml.c4gh"
     done
 
     cecho green "Done"
 }
 
-# This function extracts the organisation name from the "organisation.xml" file.
-# - It first checks if the "organisation.xml" file exists in the "xml-files" directory.
-# - If the file exists, it uses `xmllint` to extract the organisation name
-# - If the extracted organisation name is empty, it logs an error message indicating
-#   that no organisation name is present in the XML file.
 function organisation_name {
     cecho yellow "Extracting organisation name ..."
 
-    if [ ! -f "xml-files/organisation.xml" ]; then
+    if [ ! -f "$WORKDIR/xml-files/organisation.xml" ]; then
         cecho red "ERROR: organisation.xml file does not exist in the xml-files folder"
         exit 1
     fi
 
-    ORG_NAME=$(xmllint --xpath "//ORGANISATION_SET/ORGANISATION/NAME/text()" xml-files/organisation.xml)
+    ORG_NAME=$(xmllint --xpath "//ORGANISATION_SET/ORGANISATION/NAME/text()" "$WORKDIR/xml-files/organisation.xml")
     if [ -z "$ORG_NAME" ]; then
         cecho red "There is no organisation name in xml"
     else
@@ -938,7 +916,6 @@ function organisation_name {
     cecho green "Done"
 }
 
-# Function for checking Kubernetes access
 function check_kubernetes_access {
     if [[ "$cluster" == "prod" ]]; then
         if ! kubectl -n sda-prod auth can-i create jobs >/dev/null 2>&1; then
@@ -949,9 +926,7 @@ function check_kubernetes_access {
     fi
 }
 
-vault token renew >/dev/null 2>&1
-if [[ "$?" != "0" ]] && [[ "$1" != "--clean" ]];
-then
+if ! vault token renew >/dev/null 2>&1 && [[ "$1" != "--clean" ]]; then
     cecho red "You must log in to vault.nbis.se before using this script"
     exit 1
 fi
@@ -981,7 +956,7 @@ find_metadata_version
 
 get_xsd_files
 
-validate_with_xsd_$version
+"validate_with_xsd_$version"
 
 comparing_files
 
@@ -1024,29 +999,31 @@ cat << EOF
 
 EOF
 
-# Copy metadata in data folder
-cp -f xml-files/rems.xml ../data/xml/rems.txt || exit 1
-cp -f xml-files/policy.xml ../data/xml/policy.txt || exit 1
-cp -f xml-files/dataset.xml ../data/xml/dataset.txt || exit 1
+# Create data directory in WORKDIR
+mkdir -p "$WORKDIR/data/xml"
 
-# Create the config file
-cp  -f ../config.yaml.example ../config.yaml
+# Copy metadata in WORKDIR/data folder
+cp -f "$WORKDIR/xml-files/rems.xml" "$WORKDIR/data/xml/rems.txt" || exit 1
+cp -f "$WORKDIR/xml-files/policy.xml" "$WORKDIR/data/xml/policy.txt" || exit 1
+cp -f "$WORKDIR/xml-files/dataset.xml" "$WORKDIR/data/xml/dataset.txt" || exit 1
+
+# Create the config file in WORKDIR
+cp -f "$SCRIPT_DIR/../config.yaml.example" "$WORKDIR/config.yaml"
 
 # Update the config file
-sed_i "s|USER_ID:.*|USER_ID: \"${user//_/@}\"|" ../config.yaml
-sed_i "s|DATASET_ID:.*|DATASET_ID: \"$dataset_id\"|" ../config.yaml
-sed_i "s|DATASET_FOLDER:.*|DATASET_FOLDER: \"$dataset\"|" ../config.yaml
-sed_i "s|CLIENT_ACCESS_TOKEN:.*|CLIENT_ACCESS_TOKEN: \"$ACCESS_TOKEN\"|" ../config.yaml
-sed_i "s|MAIL_UPLOADER:.*|MAIL_UPLOADER: \"$EMAIL\"|" ../config.yaml
-sed_i "s|MAIL_UPLOADER_NAME:.*|MAIL_UPLOADER_NAME: \"$NAME\"|" ../config.yaml
-sed_i "s|MAIL_UPLOADER_ORGANIZATION_NAME:.*|MAIL_UPLOADER_ORGANIZATION_NAME: \"$ORG_NAME\"|" ../config.yaml
+sed_i "s|USER_ID:.*|USER_ID: \"${user//_/@}\"|" "$WORKDIR/config.yaml"
+sed_i "s|DATASET_ID:.*|DATASET_ID: \"$dataset_id\"|" "$WORKDIR/config.yaml"
+sed_i "s|DATASET_FOLDER:.*|DATASET_FOLDER: \"$dataset\"|" "$WORKDIR/config.yaml"
+sed_i "s|CLIENT_ACCESS_TOKEN:.*|CLIENT_ACCESS_TOKEN: \"$ACCESS_TOKEN\"|" "$WORKDIR/config.yaml"
+sed_i "s|MAIL_UPLOADER:.*|MAIL_UPLOADER: \"$EMAIL\"|" "$WORKDIR/config.yaml"
+sed_i "s|MAIL_UPLOADER_NAME:.*|MAIL_UPLOADER_NAME: \"$NAME\"|" "$WORKDIR/config.yaml"
+sed_i "s|MAIL_UPLOADER_ORGANIZATION_NAME:.*|MAIL_UPLOADER_ORGANIZATION_NAME: \"$ORG_NAME\"|" "$WORKDIR/config.yaml"
 
-pushd ..
-go build -o bpctl .
-./bpctl render -x
+pushd "$WORKDIR" > /dev/null || exit
+bpctl render -x
 kubectl kustomize . -o "$dataset".yaml
 kubectl -n sda-prod apply -f "$dataset".yaml
-popd
+popd > /dev/null || exit
 
 trap - EXIT
 remove_private_key
