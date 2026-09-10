@@ -1009,6 +1009,7 @@ cp -f "$WORKDIR/xml-files/dataset.xml" "$WORKDIR/data/xml/dataset.txt" || exit 1
 
 # Create the config file in WORKDIR
 cp -f "$SCRIPT_DIR/../config.yaml.example" "$WORKDIR/config.yaml"
+cp -f "$SCRIPT_DIR/../kustomization.yaml" "$WORKDIR/kustomization.yaml"
 
 # Update the config file
 sed_i "s|USER_ID:.*|USER_ID: \"${user//_/@}\"|" "$WORKDIR/config.yaml"
