@@ -1023,7 +1023,7 @@ sed_i "s|MAIL_UPLOADER_ORGANIZATION_NAME:.*|MAIL_UPLOADER_ORGANIZATION_NAME: \"$
 pushd "$WORKDIR" > /dev/null || exit
 bpctl render -x
 kubectl kustomize . -o "$dataset".yaml
-kubectl -n sda-prod apply -f "$dataset".yaml
+kubectl -n sda-prod apply --server-side -f "$dataset".yaml
 popd > /dev/null || exit
 
 trap - EXIT
