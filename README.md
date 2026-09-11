@@ -29,6 +29,7 @@ Commands must be one of:
 - `mail`
 - `job`
 - `render`
+- `status`
 
 #### examples
 
@@ -157,6 +158,20 @@ Attachements such as `rems.txt`, `dataset.txt` and `policy.txt` needs to be avai
 ```
 
 Will render a 'opinionated' kubernetes yaml manifest that defines a `job` resrouce. Fields specific for a given dataset is populated from `config.yaml` while other big picture specific deployment fields such as `CLIENT_API_HOST`, `CERT_SECRET_NAME` and similar are hard coded. This is not a generic template that is meant to fit multiple purposes, It's specifically made to fit the big picture kubernetes deployment in NBIS.
+
+### status
+
+```bash
+./bpctl status [flags]
+```
+
+Will get a list of files for the `USER_ID` that resides in `DATASET_FOLDER` and print a report of how many files are in each status, e.g.
+
+```
+- verified: 2012
+- uploaded: 124
+- submitted: 2
+```
 
 ### landingpage
 
