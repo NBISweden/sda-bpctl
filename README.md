@@ -173,6 +173,12 @@ Will get a list of files for the `USER_ID` that resides in `DATASET_FOLDER` and 
 - submitted: 2
 ```
 
+Use `--status`/`-s` to instead list the file IDs currently in a specific status:
+
+```bash
+./bpctl status --status verified
+```
+
 ### landingpage
 
 ```bash
