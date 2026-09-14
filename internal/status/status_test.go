@@ -43,14 +43,14 @@ func (m *mockClient) WaitForStatus(target int, status string, interval time.Dura
 func setup(userID string, datasetFolder string) *mockClient {
 	return &mockClient{
 		FilesToReturn: []models.FileInfo{
-			{InboxPath: fmt.Sprintf("/%s/%s/file1.c4gh", userID, datasetFolder), Status: "uploaded"},
-			{InboxPath: fmt.Sprintf("/%s/%s/file2.c4gh", userID, datasetFolder), Status: "uploaded"},
-			{InboxPath: fmt.Sprintf("/%s/%s/file3.c4gh", userID, datasetFolder), Status: "verified"},
-			{InboxPath: fmt.Sprintf("/%s/%s/file4.c4gh", userID, datasetFolder), Status: "verified"},
-			{InboxPath: fmt.Sprintf("/%s/%s/file5.c4gh", userID, datasetFolder), Status: "verified"},
-			{InboxPath: fmt.Sprintf("/%s/%s/file6.c4gh", userID, datasetFolder), Status: "ready"},
-			{InboxPath: fmt.Sprintf("/%s/PRIVATE/%s/file7.c4gh", userID, datasetFolder), Status: "uploaded"},
-			{InboxPath: fmt.Sprintf("/%s/%s/LANDING_PAGE/file8.c4gh", userID, datasetFolder), Status: "ready"},
+			{FileID: "file1", InboxPath: fmt.Sprintf("/%s/%s/file1.c4gh", userID, datasetFolder), Status: "uploaded"},
+			{FileID: "file2", InboxPath: fmt.Sprintf("/%s/%s/file2.c4gh", userID, datasetFolder), Status: "uploaded"},
+			{FileID: "file3", InboxPath: fmt.Sprintf("/%s/%s/file3.c4gh", userID, datasetFolder), Status: "verified"},
+			{FileID: "file4", InboxPath: fmt.Sprintf("/%s/%s/file4.c4gh", userID, datasetFolder), Status: "verified"},
+			{FileID: "file5", InboxPath: fmt.Sprintf("/%s/%s/file5.c4gh", userID, datasetFolder), Status: "verified"},
+			{FileID: "file6", InboxPath: fmt.Sprintf("/%s/%s/file6.c4gh", userID, datasetFolder), Status: "ready"},
+			{FileID: "file7", InboxPath: fmt.Sprintf("/%s/PRIVATE/%s/file7.c4gh", userID, datasetFolder), Status: "uploaded"},
+			{FileID: "file8", InboxPath: fmt.Sprintf("/%s/%s/LANDING_PAGE/file8.c4gh", userID, datasetFolder), Status: "ready"},
 		},
 	}
 }
@@ -58,10 +58,31 @@ func setup(userID string, datasetFolder string) *mockClient {
 func TestRun(t *testing.T) {
 	mock := setup("testuser", "DATASET_TEST")
 
-	counts, err := Run(mock)
+	files, err := Run(mock)
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	expectedFiles := 6 // excludes the PRIVATE and LANDING_PAGE entries
+	if len(files) != expectedFiles {
+		t.Errorf("got %d files, want %d", len(files), expectedFiles)
+	}
+
+	for _, f := range files {
+		if f.FileID == "file7" || f.FileID == "file8" {
+			t.Errorf("expected %s to be filtered out, but it was present", f.FileID)
+		}
+	}
+}
+
+func TestCountByStatus(t *testing.T) {
+	mock := setup("testuser", "DATASET_TEST")
+	files, err := Run(mock)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	counts := CountByStatus(files)
 
 	expected := map[string]int{"uploaded": 2, "verified": 3, "ready": 1}
 	for status, want := range expected {
@@ -71,6 +92,30 @@ func TestRun(t *testing.T) {
 	}
 	if len(counts) != len(expected) {
 		t.Errorf("got %d distinct statuses, want %d", len(counts), len(expected))
+	}
+}
+
+func TestFileIDsForStatus(t *testing.T) {
+	mock := setup("testuser", "DATASET_TEST")
+	files, err := Run(mock)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ids := FileIDsForStatus(files, "verified")
+	expected := []string{"file3", "file4", "file5"}
+
+	if len(ids) != len(expected) {
+		t.Fatalf("got %d ids, want %d: %v", len(ids), len(expected), ids)
+	}
+	for i, id := range expected {
+		if ids[i] != id {
+			t.Errorf("ids[%d] = %q, want %q", i, ids[i], id)
+		}
+	}
+
+	if got := FileIDsForStatus(files, "nonexistent"); got != nil {
+		t.Errorf("expected nil for unmatched status, got %v", got)
 	}
 }
 
