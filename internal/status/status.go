@@ -15,11 +15,12 @@ import (
 
 var configPath string
 var statusFilter string
+var sqlFormat bool
 
 var statusCmd = &cobra.Command{
 	Use:   "status [flags]",
 	Short: "Report file status counts",
-	Long:  "Reports how many files under the configured dataset folder are in each status, e.g. uploaded, verified, ready. Use --status to instead list the stable IDs currently in a specific status.",
+	Long:  "Reports how many files under the configured dataset folder are in each status, e.g. uploaded, verified, ready. Use --status to instead list the file IDs currently in a specific status, optionally formatted as a SQL IN clause with --sql.",
 	Args: func(cmd *cobra.Command, args []string) error {
 		return nil
 	},
@@ -40,7 +41,12 @@ var statusCmd = &cobra.Command{
 		}
 
 		if statusFilter != "" {
-			for _, id := range FileIDsForStatus(files, statusFilter) {
+			ids := FileIDsForStatus(files, statusFilter)
+			if sqlFormat {
+				fmt.Println(FormatSQLInClause(ids))
+				return nil
+			}
+			for _, id := range ids {
 				fmt.Println(id)
 			}
 			return nil
@@ -54,7 +60,8 @@ var statusCmd = &cobra.Command{
 func init() {
 	cmd.AddCommand(statusCmd)
 	statusCmd.Flags().StringVarP(&configPath, "config", "c", "config.yaml", "Path to configuration file")
-	statusCmd.Flags().StringVarP(&statusFilter, "status", "s", "", "Only list the stable IDs currently in this status, instead of printing statuses and number of files")
+	statusCmd.Flags().StringVarP(&statusFilter, "status", "s", "", "Only list the file IDs currently in this status, instead of printing the full report")
+	statusCmd.Flags().BoolVar(&sqlFormat, "sql", false, "With --status, format the file IDs as a SQL IN clause, e.g. ('id1', 'id2') instead of one per line")
 }
 
 func Run(api client.APIClient) ([]models.FileInfo, error) {
@@ -95,6 +102,16 @@ func FileIDsForStatus(files []models.FileInfo, status string) []string {
 		}
 	}
 	return ids
+}
+
+// FormatSQLInClause renders ids in a parenthesized, comma seperated, singled quoted format.
+// easier to use it directly in a psql query.
+func FormatSQLInClause(ids []string) string {
+	quoted := make([]string, len(ids))
+	for i, id := range ids {
+		quoted[i] = "'" + strings.ReplaceAll(id, "'", "''") + "'"
+	}
+	return "(" + strings.Join(quoted, ", ") + ")"
 }
 
 // FormatReport renders the counts as lines sorted by count descending, then
