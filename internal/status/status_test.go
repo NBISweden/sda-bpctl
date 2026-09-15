@@ -119,6 +119,24 @@ func TestFileIDsForStatus(t *testing.T) {
 	}
 }
 
+func TestFormatSQLInClause(t *testing.T) {
+	got := FormatSQLInClause([]string{"file3", "file4", "file5"})
+	want := "('file3', 'file4', 'file5')"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+
+	if got := FormatSQLInClause(nil); got != "()" {
+		t.Errorf("got %q for empty input, want %q", got, "()")
+	}
+
+	got = FormatSQLInClause([]string{"a'b"})
+	want = "('a''b')"
+	if got != want {
+		t.Errorf("got %q, want %q (single quote should be escaped)", got, want)
+	}
+}
+
 func TestFormatReport(t *testing.T) {
 	counts := map[string]int{"uploaded": 124, "submitted": 2, "verified": 2012}
 
