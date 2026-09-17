@@ -152,6 +152,13 @@ END_USAGE
 }
 
 # Function for cleaning up the files that are created by the script
+# - Removes the xsd and xml folders
+# - Removes the crypt4gh private key
+# - Removes the crypt4gh private key passphrase from env
+# - Removes the json files
+# - Removes the public key
+# - Removes the error files
+# - Removes the general_errors.logs file
 function cleanup {
     cecho yellow "Cleaning up ..."
 
@@ -272,6 +279,9 @@ function sanitize_user_dataset {
 }
 
 # Function for getting the xsd files from github repo
+# - Gets the download urls of the xsd files from github api
+# - Downloads the xsd files by using the download urls
+# - Puts the files in the xsd-files directory
 function get_xsd_files {
     cecho yellow "Getting xsd files ..."
     mkdir -p "$WORKDIR/xsd-files"
@@ -331,6 +341,8 @@ function get_credentials {
 function validate_private_files {
     cecho yellow "Validating PRIVATE files ..."
     private_files=("$@")
+    # Depending on the version the expected private files are different
+    # If the number of private files is not the expected then exit
     if [[ $version == "v1" ]]; then
         expected_private_files=("DAC" "submission")
         cecho yellow "Expected private files: ${expected_private_files[*]}"
@@ -379,9 +391,11 @@ function validate_files {
     done | awk -F'_lifescience-ri.eu/|_elixir-europe.org/' '{print $2}' | cut -d'/' -f3 | sort -u | tr '\n' ' ')
     read -r -a metadata_private_files <<<"$inbox_private_files"
     if [[ "$1" == "false" ]]; then
+        # Remove the annotation and observer from the expected_metadata_content
         unset 'expected_metadata_content[3]'
         expected_metadata_content=("${expected_metadata_content[@]}")
         local has_annotation=false
+        # Check if "annotation" or "observer" is in the metadata_files
         for mf in "${metadata_files[@]}"; do
             if [[ "$mf" == "annotation"* ]]; then
                 has_annotation=true
@@ -394,6 +408,7 @@ function validate_files {
         fi
     fi
 
+    # Check if any metadata files are missing
     for expected_metadata in "${expected_metadata_content[@]}"; do
         local found=false
         for mf in "${metadata_files[@]}"; do
@@ -408,6 +423,7 @@ function validate_files {
         fi
     done
 
+    # Check if there are any extra metadata files
     for metadata_file in "${metadata_files[@]}"; do
         file_basename=$(basename "$metadata_file" | cut -d'.' -f1)
         if [[ "$file_basename" == "observer" ]]; then
@@ -448,6 +464,8 @@ function validate_structure {
         ERROR_STATUS=1
     fi
 
+    # Check if annotations folder exists in the subfolders
+    # If it does not then remove it from the expected_subfolders
     local has_annotations=false
     for sf in "${subfolders[@]}"; do
         if [[ "$sf" == "ANNOTATIONS" ]]; then
@@ -468,6 +486,10 @@ function validate_structure {
             break
         fi
     done
+
+    # Check if landing pages folder exists in the subfolders
+    # If it does not then remove it from the expected_subfolders
+    # If it exists, check if THUMBNAILS folder exists and contains files
     if [[ "$has_landing_page" == false ]]; then
         if [[ "$annotations" == "false" ]]; then
             unset 'expected_subfolders[3]'
@@ -487,6 +509,7 @@ function validate_structure {
         LANDING_PAGE=true
     fi
 
+    # Check if landing page folder is empty in case it exists
     if [[ "$LANDING_PAGE" == "true" ]]; then
         landing_page_files=$(for bucket in "${INBOX_BUCKETS[@]}"; do
             s3cmd_command ls "s3://${bucket}/${user}/${dataset}/LANDING_PAGE/" --recursive 2>/dev/null
@@ -497,6 +520,8 @@ function validate_structure {
         fi
     fi
 
+    # Compare the two arrays of subfolders and expected_subfolders
+    # and print if they are not the same
     local extra_subfolders=()
     local missing_subfolders=()
     for expected_subfolder in "${expected_subfolders[@]}"; do
@@ -569,6 +594,7 @@ function get_xml_files {
         fi
     fi
 
+    # Check if the folder xml-files is empty
     if [ -z "$(ls -A "$WORKDIR/xml-files")" ]; then
         cecho red "ERROR: Metadata folder is empty. Check if the path of the metadata folder in inbox is where it should be"
         ERROR_STATUS=1
@@ -577,6 +603,9 @@ function get_xml_files {
 }
 
 # Function for decrypting the xml file
+# - Gets the crypt4gh private key from vault
+# - Checks if the crypt4gh is the python or golang version
+# - Decrypts all the files that are in the xml-files folder
 function decrypt_xml_files {
     cecho yellow "Decrypting xml files ..."
     export C4GH_PASSPHRASE
@@ -593,6 +622,8 @@ function decrypt_xml_files {
 }
 
 # Function for finding the metadata version
+# - Checks if the METADATA_STANDARD tag exists in the dataset.xml file
+# - If it does exist then the metadata version is v2
 function find_metadata_version {
     xml_version=$(xmllint --xpath 'string(/DATASET_SET/DATASET/METADATA_STANDARD)' "$WORKDIR/xml-files/dataset.xml")
     if [[ "$xml_version" == "" ]]; then
@@ -603,7 +634,15 @@ function find_metadata_version {
         version="v2"
     fi
 }
-
+# Functions for validating xml files with xsd v1 and v2.
+# - It creates a list of all xsd files and a list of all xml files.
+# - Loops over all xml files (ignoring the c4gh files) and extracts the root element name.
+# - For each xml file it loops over the xsd files (starting from the "BP" ones and ignoring
+#   the common and schema), gets all the top level elements and if the root element of the
+#   xml file matches one of the top level element of the xsd file, then it validates the
+#   xml file with the xsd file.
+# TODO: check if there are only the xml files that should be present in the xml-files folder.
+# This can be done if a final decision is made about the names of the xml files.
 function validate_with_xsd_v1 {
     cecho yellow "Validation started..."
     error_flag=0
@@ -690,6 +729,7 @@ function validate_with_xsd_v2 {
 }
 
 # Returns lines in $1 not present in $2.
+# Both lists must contain unique entries; $2 should be pre-sorted for efficiency.
 function check_files {
     comm -23 <(sort <<< "$1") <(sort <<< "$2")
 }
@@ -710,11 +750,21 @@ function check_file_sizes {
     fi
 }
 
+# Function for checking the metadata and inbox files.
+# - Gets a list of all the dataset filepaths in the inbox
+# - Counts only the files in the IMAGES folder
+# - Parses the filenames from metadata and counts them
+# - Checks if the metadata list is empty and if it is, then exits
+# - Checks if the number of files in the inbox and in the metadata are equal
+# - If there are equal number of files, then it checks if the filenames from metadata exist in the inbox
+# - If they are not equal, it prints the extra or missing files and exits
 function comparing_files {
     cecho yellow "Checking files ..."
     all_inbox_files=$(for bucket in "${INBOX_BUCKETS[@]}"; do
         s3cmd_command ls "s3://${bucket}/${user}/${dataset}/" --recursive 2>/dev/null
     done | awk '{print $4}' | sort -u)
+    # Strip the S3 prefix and .c4gh suffix so paths match the relative paths stored in metadata (e.g. IMAGES/IMAGE_xxx/file.dcm)
+    # Pre-sort once so comm calls below don't need to re-sort the large list
     all_inbox_relative=$(echo "$all_inbox_files" | sed -E "s|s3://[^/]+/${user}/${dataset}/||" | sed 's/\.c4gh$//' | sort -u)
 
     count_inbox_files=$(echo "$all_inbox_relative" | grep -c '^IMAGES/')
@@ -728,6 +778,7 @@ function comparing_files {
     done
 
     count_metadata_files=$(echo "$metadata_files_str" | wc -l | xargs)
+    # Replace backslashes in metadata filenames (in case they exist)
     new_metadata_files=$(echo "$metadata_files_str" | sed 's/\\/\//g')
 
     if [[ "$metadata_files_str" == "" ]]; then
@@ -741,6 +792,7 @@ function comparing_files {
         ERROR_STATUS=1
     elif [ "$count_inbox_files" -gt "$count_metadata_files" ]; then
         cecho red "ERROR: There are more files in the inbox than the ones that are referenced in metadata (inbox=$count_inbox_files, metadata=$count_metadata_files)" | tee -a "$WORKDIR/general_errors.logs"
+        # Modify all_inbox_files to contain only the parts that are referenced in metadata
         inbox_images_files=$(echo "$all_inbox_relative" | grep '^IMAGES/IMAGE_')
         extra_inbox_relative=$(check_files "$inbox_images_files" "$new_metadata_files")
         extra_inbox_files=$(awk -F'\t' 'NR==FNR { if (NF) wanted[$1]=1; next } wanted[$2] { print $1 }' \
@@ -769,6 +821,7 @@ function comparing_files {
         fi
     fi
 
+    # Check the thumbnails files
     if [[ "$LANDING_PAGE" == "true" ]]; then
         all_thumbnail_files=$(for bucket in "${INBOX_BUCKETS[@]}"; do
             s3cmd_command ls "s3://${bucket}/${user}/${dataset}/LANDING_PAGE/THUMBNAILS/" --recursive 2>/dev/null
@@ -827,6 +880,18 @@ function generate_dataset_id {
     echo "aa-Dataset-$part_one-$part_two"
 }
 
+# Function for moving the metadata files from the inbox to the metadata bucket
+# - Gets the dataset id from the dataset_id.txt file
+# - Find the path of the folder in the inbox.
+# - In case of staging cluster:
+#       - Move the files from the inbox to the metadata bucket (stable id is in the file path).
+# - In case of prod cluster:
+#      - Create the folder.
+#      - Get the files from the inbox to the local folder.
+#      - Put the files in the metadata bucket.
+#      - Delete the files from the inbox.
+# - Check if the metadata files are moved by checking the size of the metadata folder
+#   and if the size is empty, then exit.
 function move_private_metadata {
     cecho yellow "Moving metadata ..."
 
@@ -869,6 +934,14 @@ function move_private_metadata {
     cecho green "Done"
 }
 
+
+# Function for modifying the dataset.xml file
+# - Checks if the dataset.xml file exists in the xml-files folder
+# - Adds the dataset stable id in the dataset.xml file
+# - Downloads the public key
+# - Encrypts the dataset.xml file
+# - Deletes the file from the metadata bucket
+# - Uploads the modified encrypted file to the metadata bucket
 function modify_dataset {
     cecho yellow "Modifying dataset.xml file ..."
 
@@ -898,6 +971,12 @@ function modify_dataset {
     cecho green "Done"
 }
 
+
+# Function for extracting the organisation name from the "organisation.xml" file.
+# - It first checks if the "organisation.xml" file exists in the "xml-files" directory.
+# - If the file exists, it uses `xmllint` to extract the organisation name
+# - If the extracted organisation name is empty, it logs an error message indicating
+#   that no organisation name is present in the XML file.
 function organisation_name {
     cecho yellow "Extracting organisation name ..."
 
