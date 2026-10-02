@@ -12,6 +12,7 @@ import (
 	_ "github.com/NBISweden/sda-bpctl/internal/job"
 	_ "github.com/NBISweden/sda-bpctl/internal/landingpage"
 	_ "github.com/NBISweden/sda-bpctl/internal/mail"
+	_ "github.com/NBISweden/sda-bpctl/internal/status"
 )
 
 var version = "dev"
