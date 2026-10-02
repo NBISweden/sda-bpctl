@@ -40,6 +40,9 @@ var statusCmd = &cobra.Command{
 			return err
 		}
 
+		if sqlFormat && statusFilter == "" {
+			return fmt.Errorf("--sql requires --status")
+		}
 		if statusFilter != "" {
 			ids := FileIDsForStatus(files, statusFilter)
 			if sqlFormat {
