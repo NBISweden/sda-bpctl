@@ -44,6 +44,10 @@ func (m *mockClient) PostFileAccession(payload []byte) ([]byte, error) {
 	return response, nil
 }
 
+func (m *mockClient) GetDataset(datasetID string) (*models.DatasetInfo, error) {
+	return nil, nil
+}
+
 func (m *mockClient) PostDatasetCreate(payload []byte) ([]byte, error) {
 	response, err := json.Marshal(m.Response)
 	if err != nil {
