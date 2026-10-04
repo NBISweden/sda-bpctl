@@ -7,3 +7,9 @@ type FileInfo struct {
 	Status      string `json:"fileStatus"`
 	CreateAt    string `json:"createAt"`
 }
+
+type DatasetInfo struct {
+	Status        string `json:"status"`
+	CreatedAt     string `json:"createdAt"`
+	NumberOfFiles int    `json:"numberOfFiles"`
+}

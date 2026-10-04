@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -18,6 +19,9 @@ import (
 	"github.com/NBISweden/sda-bpctl/internal/models"
 	"github.com/cenkalti/backoff/v4"
 )
+
+// ErrNotFound is returned when the API responds with 404 Not Found.
+var ErrNotFound = errors.New("not found")
 
 type Client struct {
 	accessToken   string
@@ -121,6 +125,25 @@ func (c *Client) PostDatasetCreate(payload []byte) ([]byte, error) {
 	return c.doRequest("POST", "dataset/create", payload)
 }
 
+// GetDataset returns the state of a dataset, or nil if the dataset does not
+// exist yet.
+func (c *Client) GetDataset(datasetID string) (*models.DatasetInfo, error) {
+	respBody, err := c.doRequest("GET", fmt.Sprintf("dataset/%s", url.PathEscape(datasetID)), nil)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var dataset models.DatasetInfo
+	err = json.Unmarshal(respBody, &dataset)
+	if err != nil {
+		return nil, err
+	}
+	return &dataset, nil
+}
+
 func (c *Client) doRequest(method, path string, body []byte) ([]byte, error) {
 	url := fmt.Sprintf("%s/%s", c.apiHost, path)
 
@@ -164,6 +187,9 @@ func (c *Client) doRequest(method, path string, body []byte) ([]byte, error) {
 
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
+		if resp.StatusCode == http.StatusNotFound {
+			return nil, fmt.Errorf("%w: %s", ErrNotFound, resp.Status)
+		}
 		return nil, fmt.Errorf("non-ok response: %s", resp.Status)
 	}
 	defer resp.Body.Close()

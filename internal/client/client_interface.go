@@ -11,6 +11,7 @@ type APIClient interface {
 	PostFileIngest([]byte) ([]byte, error)
 	PostFileAccession(payload []byte) ([]byte, error)
 	PostDatasetCreate(payload []byte) ([]byte, error)
+	GetDataset(datasetID string) (*models.DatasetInfo, error)
 	GetFilesWithStatus(status string) ([]models.FileInfo, error)
 	WaitForStatus(target int, status string, interval time.Duration, timeout time.Duration) ([]models.FileInfo, error)
 }
