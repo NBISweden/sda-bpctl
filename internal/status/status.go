@@ -21,10 +21,12 @@ var statusCmd = &cobra.Command{
 	Use:   "status [flags]",
 	Short: "Report file status counts",
 	Long:  "Reports how many files under the configured dataset folder are in each status, e.g. uploaded, verified, ready. Use --status to instead list the file IDs currently in a specific status, optionally formatted as a SQL IN clause with --sql.",
-	Args: func(cmd *cobra.Command, args []string) error {
-		return nil
-	},
+	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if sqlFormat && statusFilter == "" {
+			return fmt.Errorf("--sql requires --status")
+		}
+
 		cfg, err := config.NewConfig(configPath)
 		if err != nil {
 			return err
@@ -40,9 +42,6 @@ var statusCmd = &cobra.Command{
 			return err
 		}
 
-		if sqlFormat && statusFilter == "" {
-			return fmt.Errorf("--sql requires --status")
-		}
 		if statusFilter != "" {
 			ids := FileIDsForStatus(files, statusFilter)
 			if sqlFormat {
