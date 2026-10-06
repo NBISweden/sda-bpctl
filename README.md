@@ -52,7 +52,7 @@ Running mail notification with the dry-run flag
 
 #### kubernetes job
 
-The `job` command is meant to try and run all the steps of the dataset submission process in order; ingest -> accession -> dataset. It will need environment variables to configure and will need to be adjusted for the environment to run in. The `job` command also needs a input argument that represents the amount of files that is expected to be included in the finalized dataset. If at some point during the process this number does not match the job will fail and the user have to take over the process from that point.
+The `job` command is meant to try and run all the steps of the dataset submission process in order; ingest -> accession -> dataset, waiting for each step to complete before starting the next. It will need environment variables to configure and will need to be adjusted for the environment to run in. See the [job](#job) section for details.
 
 specify your manifest, for example in a `job.yaml` or you can render a templated manifest based on your `config.yaml` using the `render` command
 
@@ -72,6 +72,14 @@ will render a job.yaml manifest for you based on the configuration values you ha
 
 bpctl can consume configuration from either `config.yaml` or from environment variables. If both are supplied then the environment variables will take priority. If using config.yaml it is expected to be located in the root directory of the project. It can also be supplied by using the `--config` flag if located elsewhere.
 
+The config file format is detected from its file extension, so use `.yaml` or `.yml` for a YAML file. A file with an unsupported extension such as `.conf` is not read at all: bpctl logs `failed to read config file, falling back to environment variables` and then fails validation, e.g. with `DATASET_FOLDER requiered`.
+
+Since environment variables take priority, single values can be overridden for one run without editing the config file:
+
+```bash
+CLIENT_API_HOST=https://staging-api.bp.nbis.se ./bpctl status --config config.yaml
+```
+
 see the `config.yaml.example` for a base template with what fields to fill. The example shows a minimal config. The table below shows all possible values that can be configured:
 | Name                              | Default                           |
 | --------------------------------- | --------------------------------- |
@@ -79,14 +87,14 @@ see the `config.yaml.example` for a base template with what fields to fill. The 
 | DATASET_ID                        | none                              | 
 | USER_ID                           | none                              |
 | SSL_CA_CERT                       | none                              |
-| JOB_TIMEOUT                       | 4320                              |
-| JOB_POLL_RATE                     | 180                               |
+| JOB_TIMEOUT                       | 4320 (minutes, i.e. 72 hours)     |
+| JOB_POLL_RATE                     | 180 (minutes, i.e. 3 hours)       |
 | JOB_DATA_DIRECTORY                | "/data"                           |
 | CLIENT_API_HOST                   | "https://api.bp.nbis.se"          |
-| CLIENT_ACCESS_TOKEN               | "sda-bpctl-mail"                  |
+| CLIENT_ACCESS_TOKEN               | none                              |
 | CERT_SECRET_NAME                  | "sda-sda-svc-api-certs"           |
 | STORAGE_SECRET_NAME               | "sda-bpctl-storage"               |
-| MAIL_SECRET_NAME                  | none                              |
+| MAIL_SECRET_NAME                  | "sda-bpctl-mail"                  |
 | MAIL_ADDRESS                      | none                              |
 | MAIL_PASSWORD                     | none                              |
 | MAIL_SMTP_HOST                    | "mail.nbis.se"                    |
@@ -159,6 +167,8 @@ Attachements such as `rems.txt`, `dataset.txt` and `policy.txt` needs to be avai
 
 Will render a 'opinionated' kubernetes yaml manifest that defines a `job` resrouce. Fields specific for a given dataset is populated from `config.yaml` while other big picture specific deployment fields such as `CLIENT_API_HOST`, `CERT_SECRET_NAME` and similar are hard coded. This is not a generic template that is meant to fit multiple purposes, It's specifically made to fit the big picture kubernetes deployment in NBIS.
 
+The rendered manifest has no namespace, so set it when applying, e.g. `kubectl -n sda-prod apply -f job.yaml`. The API host (`https://sda-sda-svc-api:8080`) and the `release: sda` label are hard coded to the `sda-prod` deployment and are not read from the config. In `sda-staging` the API service is `pipeline-sda-svc-api` and the label is `release=pipeline`, so a manifest rendered for staging has to be edited before it is applied.
+
 ### status
 
 ```bash
@@ -197,10 +207,71 @@ Will look for any objects in `S3_INBOX_BUCKET` that have a `LANDING_PAGE` in the
 ### job
 
 ```bash
-./bpctl job <expectedFiles> [flags]
+./bpctl job [flags]
 ```
 
-Will run all the above steps in order of ingest -> accession -> dataset and ensure the expectedFiles are keept between each stage where expectedFiles represents a integer value of the ammount of files that is expected to be present in the finalized dataset. If a dataset completes without error the job command will finish with sending out email notifications and move eventual landing pages from the inbox bucket to the public metadata bucket.
+Will run all the above steps in order. Ingestion, accession and mapping files to a dataset are processed asynchronously by the SDA, so the job polls the API every `JOB_POLL_RATE` minutes and waits for each step to complete before starting the next:
+
+1. ingest: wait until all dataset files are `verified`
+2. accession: wait until all dataset files are `ready`
+3. dataset: wait until all dataset files are mapped to `DATASET_ID`
+4. landing page: move eventual landing pages from the inbox bucket to the public metadata bucket
+5. mail: send email notifications
+
+"Dataset files" are all files under `DATASET_FOLDER`, except files under `PRIVATE` and `LANDING_PAGE`. The job fails if any of them ends up in `error` status, or if a step does not complete within `JOB_TIMEOUT` minutes. Failing landing page and mail steps are only logged as warnings.
+
+The job can be re-run after it failed or timed out; it picks up from where the previous run stopped. Note that `<DATASET_FOLDER>-stableIDs.txt`, attached to the mail to the uploader, only lists the files mapped to the dataset during the current run, so check it before the mail is sent if a re-run is past the dataset step.
+
+The job requires an SDA API version that provides `GET /dataset/{datasetID}`, i.e. `v4.0.0` or later.
+
+The job logs to stderr. To follow the log and keep it in a file at the same time:
+
+```bash
+./bpctl job --config config.yaml 2>&1 | tee job.log
+```
+
+### testing the job in staging
+
+The job can be run locally against the staging API. Build the binary from the current source first, so that you test the latest code:
+
+```bash
+go build -o bpctl .
+```
+
+Create a config file for staging, e.g. `config-staging.yaml`:
+
+```yaml
+USER_ID:
+DATASET_ID:
+DATASET_FOLDER:
+CLIENT_ACCESS_TOKEN:
+CLIENT_API_HOST: "https://staging-api.bp.nbis.se"
+MAIL_SMTP_HOST: "no-mail.invalid"
+JOB_DATA_DIRECTORY: "./data"
+JOB_POLL_RATE: 2      # check every 2 minutes
+JOB_TIMEOUT: 1200     # give up after 20 hours
+```
+
+- `CLIENT_ACCESS_TOKEN` must be a token for the staging environment.
+- `CLIENT_API_HOST` points the job to the staging API instead of the default production API.
+- `MAIL_SMTP_HOST` is set to a host that never resolves, since the mail recipients are hard coded and include real people. The mail step then fails with a warning and no mail is sent.
+- `JOB_DATA_DIRECTORY` must be a writable local directory. The default `/data` only exists in the kubernetes job, and the job fails after the dataset step if the stable IDs file cannot be written.
+- `JOB_POLL_RATE` and `JOB_TIMEOUT` are shortened from the production defaults (3 and 72 hours).
+
+Then run the job:
+
+```bash
+./bpctl job --config config-staging.yaml 2>&1 | tee job.log
+```
+
+Expected results:
+
+- the dataset files reach `verified` and `ready`, which can be followed with `./bpctl status --config config-staging.yaml`
+- all files are mapped to `DATASET_ID`
+- `<JOB_DATA_DIRECTORY>/<DATASET_FOLDER>-stableIDs.txt` is written
+- the landing page step logs `could not complete landingpage`, since no crypt4gh key (`C4GH_SEC_PEM`) or S3 credentials are configured
+- the mail step logs `could not complete mail notifications`, and no mail is sent
+- the job ends with `dataset submission completed!`
 
 ### testing
 
