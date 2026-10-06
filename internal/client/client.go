@@ -74,6 +74,10 @@ func New(cfg *config.Config) (*Client, error) {
 	return client, nil
 }
 
+// GetUsersFilesWithPrefix fetches every page of GET /users/<user>/files for
+// the dataset folder. The API paginates with an opaque keyset cursor: each
+// response carries an X-Next-Cursor header while more pages remain, which is
+// passed back as the cursor query parameter until the header is absent.
 func (c *Client) GetUsersFilesWithPrefix() ([]models.FileInfo, error) {
 	basePath := fmt.Sprintf("users/%s/files", c.userID)
 
@@ -82,21 +86,38 @@ func (c *Client) GetUsersFilesWithPrefix() ([]models.FileInfo, error) {
 		return nil, fmt.Errorf("unable to parse base path: %w", err)
 	}
 
-	q := u.Query()
-	q.Set("path_prefix", c.datasetFolder)
-	u.RawQuery = q.Encode()
+	var allFiles []models.FileInfo
+	seenCursors := make(map[string]bool)
+	cursor := ""
+	for {
+		q := url.Values{}
+		q.Set("path_prefix", c.datasetFolder)
+		if cursor != "" {
+			q.Set("cursor", cursor)
+		}
+		u.RawQuery = q.Encode()
 
-	respBody, err := c.doRequest("GET", u.String(), nil)
-	if err != nil {
-		return nil, err
-	}
+		respBody, header, err := c.doRequestWithHeader("GET", u.String(), nil)
+		if err != nil {
+			return nil, err
+		}
 
-	var files []models.FileInfo
-	err = json.Unmarshal(respBody, &files)
-	if err != nil {
-		return nil, err
+		var files []models.FileInfo
+		err = json.Unmarshal(respBody, &files)
+		if err != nil {
+			return nil, err
+		}
+		allFiles = append(allFiles, files...)
+
+		cursor = header.Get("X-Next-Cursor")
+		if cursor == "" {
+			return allFiles, nil
+		}
+		if seenCursors[cursor] {
+			return nil, fmt.Errorf("pagination cursor %q returned twice, aborting to avoid an endless loop", cursor)
+		}
+		seenCursors[cursor] = true
 	}
-	return files, err
 }
 
 func (c *Client) PostFileIngest(payload []byte) ([]byte, error) {
@@ -131,6 +152,12 @@ func (c *Client) GetDataset(datasetID string) (*models.DatasetInfo, error) {
 }
 
 func (c *Client) doRequest(method, path string, body []byte) ([]byte, error) {
+	responseBody, _, err := c.doRequestWithHeader(method, path, body)
+	return responseBody, err
+}
+
+// doRequestWithHeader is doRequest but also returns the response headers.
+func (c *Client) doRequestWithHeader(method, path string, body []byte) ([]byte, http.Header, error) {
 	url := fmt.Sprintf("%s/%s", c.apiHost, path)
 
 	var (
@@ -168,26 +195,26 @@ func (c *Client) doRequest(method, path string, body []byte) ([]byte, error) {
 
 	if err != nil {
 		slog.Error("could not complete request", "err", err)
-		return nil, err
+		return nil, nil, err
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
 		if resp.StatusCode == http.StatusNotFound {
-			return nil, fmt.Errorf("%w: %s", ErrNotFound, resp.Status)
+			return nil, nil, fmt.Errorf("%w: %s", ErrNotFound, resp.Status)
 		}
-		return nil, fmt.Errorf("non-ok response: %s", resp.Status)
+		return nil, nil, fmt.Errorf("non-ok response: %s", resp.Status)
 	}
 	defer resp.Body.Close()
 
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		slog.Error("could not read response body", "err", err)
-		return nil, err
+		return nil, nil, err
 	}
 
 	slog.Info("respone", "status", resp.Status, "code", resp.StatusCode)
-	return responseBody, nil
+	return responseBody, resp.Header, nil
 }
 
 func (c *Client) WaitForStatus(target int, status string, interval time.Duration, timeout time.Duration) ([]models.FileInfo, error) {
