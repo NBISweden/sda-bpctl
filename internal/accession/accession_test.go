@@ -24,10 +24,6 @@ func (m *mockClient) GetUsersFilesWithPrefix() ([]models.FileInfo, error) {
 	return m.FilesToReturn, nil
 }
 
-func (m *mockClient) GetUsersFiles() ([]models.FileInfo, error) {
-	return m.FilesToReturn, nil
-}
-
 func (m *mockClient) PostFileIngest(data []byte) ([]byte, error) {
 	response, err := json.Marshal(m.Response)
 	if err != nil {

@@ -14,10 +14,6 @@ type mockClient struct {
 	CallIndex     int
 }
 
-func (m *mockClient) GetUsersFiles() ([]models.FileInfo, error) {
-	return m.FilesToReturn, nil
-}
-
 func (m *mockClient) GetUsersFilesWithPrefix() ([]models.FileInfo, error) {
 	return m.FilesToReturn, nil
 }
@@ -66,7 +62,7 @@ func TestIngest(t *testing.T) {
 	mock := setup(userID, datasetFolder)
 
 	t.Run("Test Ingest", func(t *testing.T) {
-		userFiles, err := mock.GetUsersFiles()
+		userFiles, err := mock.GetUsersFilesWithPrefix()
 		if err != nil {
 			t.Error(err)
 		}

@@ -99,20 +99,6 @@ func (c *Client) GetUsersFilesWithPrefix() ([]models.FileInfo, error) {
 	return files, err
 }
 
-func (c *Client) GetUsersFiles() ([]models.FileInfo, error) {
-	respBody, err := c.doRequest("GET", fmt.Sprintf("users/%s/files", c.userID), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	var files []models.FileInfo
-	err = json.Unmarshal(respBody, &files)
-	if err != nil {
-		return nil, err
-	}
-	return files, nil
-}
-
 func (c *Client) PostFileIngest(payload []byte) ([]byte, error) {
 	return c.doRequest("POST", "file/ingest", payload)
 }
