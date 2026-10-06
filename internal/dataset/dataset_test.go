@@ -20,10 +20,6 @@ type mockClient struct {
 	Response            *http.Response
 }
 
-func (m *mockClient) GetUsersFiles() ([]models.FileInfo, error) {
-	return m.UserFiles, nil
-}
-
 func (m *mockClient) GetUsersFilesWithPrefix() ([]models.FileInfo, error) {
 	return m.UserFilesWithPrefix, nil
 }
