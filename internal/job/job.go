@@ -65,15 +65,15 @@ func runJob() error {
 	}
 
 	// The job may be resumed from a previous run where some files were already
-	// ingested or accessioned, so the number of files ingested in this run
-	// cannot be used as target. Instead the target is all files in the dataset
-	// folder, regardless of their status.
-	allFiles, err := api.GetUsersFilesWithPrefix()
+	// ingested, accessioned or mapped, so the number of files ingested in this
+	// run cannot be used as target. Instead the target is all files in the
+	// dataset folder, regardless of their status.
+	nrDatasetFiles, nrMappedFiles, err := countDatasetFiles(api, datasetFolder, datasetID)
 	if err != nil {
 		return err
 	}
-	nrDatasetFiles := len(helpers.FilterDatasetFiles(allFiles, datasetFolder))
-	slog.Info("files in dataset", "nr_files", nrDatasetFiles)
+	nrTotalFiles := nrDatasetFiles + nrMappedFiles
+	slog.Info("files in dataset", "nr_files", nrTotalFiles, "nr_not_mapped", nrDatasetFiles, "nr_already_mapped", nrMappedFiles)
 
 	// Files accessioned in a previous run may be "ready" already.
 	err = waitForDatasetFiles(api, datasetFolder, nrDatasetFiles, []string{"verified", "ready"}, pollRate, timeout)
@@ -95,16 +95,22 @@ func runJob() error {
 		return err
 	}
 
-	dataset.DataDirectory = dataDirectory
-	err = dataset.Run(api, datasetFolder, datasetID, userID)
-	if err != nil {
-		return err
+	// When resuming a run where every file was already mapped there is nothing
+	// left to add, and dataset/create would be called with an empty list.
+	if nrDatasetFiles > 0 {
+		dataset.DataDirectory = dataDirectory
+		err = dataset.Run(api, datasetFolder, datasetID, userID)
+		if err != nil {
+			return err
+		}
+	} else {
+		slog.Info("all files already mapped to dataset, skipping dataset creation", "dataset_id", datasetID)
 	}
 
 	// Mapping files to the dataset is also processed asynchronously, so wait
 	// until all files are mapped before the landing page and mail steps,
 	// otherwise notifications would be sent for a partial dataset.
-	err = waitForDatasetMapping(api, datasetID, nrDatasetFiles, pollRate, timeout)
+	err = waitForDatasetMapping(api, datasetID, nrTotalFiles, pollRate, timeout)
 	if err != nil {
 		return err
 	}
@@ -122,6 +128,35 @@ func runJob() error {
 
 	slog.Info("dataset submission completed!")
 	return nil
+}
+
+// countDatasetFiles returns the number of dataset files not yet mapped to the
+// dataset and the number already mapped to it. The two have to be counted
+// separately because GET /users/<user>/files only lists files that are not part
+// of a dataset, so on a resumed run the listing alone undercounts the dataset.
+//
+// The listing is fetched before the dataset, so a file mapped in between by a
+// previous run is counted twice rather than missed: the job then times out
+// instead of sending notifications for a partial dataset.
+func countDatasetFiles(api client.APIClient, datasetFolder string, datasetID string) (notMapped int, mapped int, err error) {
+	allFiles, err := api.GetUsersFilesWithPrefix()
+	if err != nil {
+		return 0, 0, err
+	}
+	notMapped = len(helpers.FilterDatasetFiles(allFiles, datasetFolder))
+
+	ds, err := api.GetDataset(datasetID)
+	if err != nil {
+		return 0, 0, err
+	}
+	if ds != nil {
+		mapped = ds.NumberOfFiles
+	}
+
+	if notMapped+mapped == 0 {
+		return 0, 0, fmt.Errorf("no files found in dataset folder %s and no files mapped to dataset %s", datasetFolder, datasetID)
+	}
+	return notMapped, mapped, nil
 }
 
 // waitForDatasetFiles polls until at least target files in the dataset folder
