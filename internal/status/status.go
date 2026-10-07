@@ -68,7 +68,7 @@ func init() {
 
 func Run(api client.APIClient) ([]models.FileInfo, error) {
 	slog.Info("fetching file status report")
-	files, err := api.GetUsersFilesWithPrefix()
+	files, err := api.GetUsersDatasetFiles()
 	if err != nil {
 		return nil, err
 	}

@@ -74,11 +74,11 @@ func New(cfg *config.Config) (*Client, error) {
 	return client, nil
 }
 
-// GetUsersFilesWithPrefix fetches every page of GET /users/<user>/files for
+// GetUsersDatasetFiles fetches every page of GET /users/<user>/files for
 // the dataset folder. The API paginates with an opaque keyset cursor: each
 // response carries an X-Next-Cursor header while more pages remain, which is
 // passed back as the cursor query parameter until the header is absent.
-func (c *Client) GetUsersFilesWithPrefix() ([]models.FileInfo, error) {
+func (c *Client) GetUsersDatasetFiles() ([]models.FileInfo, error) {
 	basePath := fmt.Sprintf("users/%s/files", c.userID)
 
 	u, err := url.Parse(basePath)
@@ -241,7 +241,7 @@ func (c *Client) WaitForStatus(target int, status string, interval time.Duration
 }
 
 func (c *Client) GetFilesWithStatus(status string) ([]models.FileInfo, error) {
-	allFiles, err := c.GetUsersFilesWithPrefix()
+	allFiles, err := c.GetUsersDatasetFiles()
 	if err != nil {
 		return nil, err
 	}
