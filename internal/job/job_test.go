@@ -3,6 +3,8 @@ package job
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -212,5 +214,68 @@ func TestWaitForDatasetFilesErrorStatus(t *testing.T) {
 	}
 	if mock.userFilesCalls != 1 {
 		t.Errorf("should fail on the first poll, got %d calls", mock.userFilesCalls)
+	}
+}
+
+func TestCheckStableIDsFile(t *testing.T) {
+	tests := []struct {
+		name     string
+		content  string
+		expected int
+		wantErr  string
+	}{
+		{
+			name:     "complete list",
+			content:  "aa-File-1 /DATASET_TEST/file1.c4gh\naa-File-2 /DATASET_TEST/file2.c4gh\naa-File-3 /DATASET_TEST/file3.c4gh\n",
+			expected: 3,
+		},
+		{
+			name:     "blank lines are not counted",
+			content:  "aa-File-1 /DATASET_TEST/file1.c4gh\n\naa-File-2 /DATASET_TEST/file2.c4gh\n\n",
+			expected: 2,
+		},
+		{
+			// resumed run: only the files mapped in this run are listed
+			name:     "incomplete list",
+			content:  "aa-File-3 /DATASET_TEST/file3.c4gh\n",
+			expected: 3,
+			wantErr:  "lists 1 of 3 dataset files",
+		},
+		{
+			name:     "more files than expected",
+			content:  "aa-File-1 a\naa-File-2 b\naa-File-3 c\naa-File-4 d\n",
+			expected: 3,
+			wantErr:  "lists 4 of 3 dataset files",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "DATASET_TEST-stableIDs.txt")
+			if err := os.WriteFile(path, []byte(tc.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			err := checkStableIDsFile(path, tc.expected)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("expected error containing %q, got %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestCheckStableIDsFileMissing(t *testing.T) {
+	// resumed run where all files were already mapped: no file is written
+	path := filepath.Join(t.TempDir(), "DATASET_TEST-stableIDs.txt")
+
+	err := checkStableIDsFile(path, 3)
+	if err == nil || !strings.Contains(err.Error(), "does not exist") {
+		t.Fatalf("expected a does-not-exist error, got %v", err)
 	}
 }

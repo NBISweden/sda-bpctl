@@ -1,9 +1,12 @@
 package job
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/NBISweden/sda-bpctl/cmd"
@@ -120,6 +123,15 @@ func runJob() error {
 		slog.Warn("could not complete landingpage", "err", err)
 	}
 
+	// The stable IDs file only lists the files mapped to the dataset during
+	// this run, so it is incomplete when a previous run already mapped files.
+	// Fail instead of mailing the uploader an incomplete list; the README
+	// describes how to rebuild the file and send the notifications manually.
+	err = checkStableIDsFile(helpers.GetStableIDsPath(dataDirectory, datasetFolder), nrTotalFiles)
+	if err != nil {
+		return fmt.Errorf("not sending mail notifications: %w", err)
+	}
+
 	mail.DataDirectory = dataDirectory
 	err = mail.Run(cfg)
 	if err != nil {
@@ -157,6 +169,30 @@ func countDatasetFiles(api client.APIClient, datasetFolder string, datasetID str
 		return 0, 0, fmt.Errorf("no files found in dataset folder %s and no files mapped to dataset %s", datasetFolder, datasetID)
 	}
 	return notMapped, mapped, nil
+}
+
+// checkStableIDsFile returns an error unless the stable IDs file at path
+// lists exactly expected files, one per non-empty line.
+func checkStableIDsFile(path string, expected int) error {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("stable IDs file %s does not exist, expected %d dataset files", path, expected)
+		}
+		return fmt.Errorf("could not read stable IDs file %s: %w", path, err)
+	}
+
+	listed := 0
+	for _, line := range strings.Split(string(content), "\n") {
+		if strings.TrimSpace(line) != "" {
+			listed++
+		}
+	}
+
+	if listed != expected {
+		return fmt.Errorf("stable IDs file %s lists %d of %d dataset files", path, listed, expected)
+	}
+	return nil
 }
 
 // waitForDatasetFiles polls until at least target files in the dataset folder
