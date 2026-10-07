@@ -157,7 +157,7 @@ Will send email notifications about dataset finalization to a fixed list of part
 
 `uploader`: recieves a mail confirming the creation of the dataset is completed with attachments `<datasetFolder>-stableIDs.txt`
 
-Attachements such as `rems.txt`, `dataset.txt` and `policy.txt` needs to be available under `--data-directory` when running as a job. During the job process it will produce  a `<datasetFolder>-stableIDs.txt` and include it. If running the mail as a standalone command the `<datasetFolder>-stableIDs.txt` also needs to be available under `--data-directory`.
+Attachements such as `rems.txt`, `dataset.txt` and `policy.txt` needs to be available under `--data-directory` when running as a job. During the job process it will produce  a `<datasetFolder>-stableIDs.txt` and include it. If running the mail as a standalone command the `<datasetFolder>-stableIDs.txt` also needs to be available under `--data-directory`. With `--dry-run`, the mails are rendered and their attachments checked, but nothing is sent. See [sending the notification mails manually](#sending-the-notification-mails-manually).
 
 ### render
 
@@ -216,11 +216,73 @@ Will run all the above steps in order. Ingestion, accession and mapping files to
 2. accession: wait until all dataset files are `ready`
 3. dataset: wait until all dataset files are mapped to `DATASET_ID`
 4. landing page: move eventual landing pages from the inbox bucket to the public metadata bucket
-5. mail: send email notifications
+5. mail: check that `<DATASET_FOLDER>-stableIDs.txt` lists every dataset file, then send email notifications
 
-"Dataset files" are all files under `DATASET_FOLDER`, except files under `PRIVATE` and `LANDING_PAGE`. The job fails if any of them ends up in `error` status, or if a step does not complete within `JOB_TIMEOUT` minutes. Failing landing page and mail steps are only logged as warnings.
+"Dataset files" are all files under `DATASET_FOLDER`, except files under `PRIVATE` and `LANDING_PAGE`. The job fails if any of them ends up in `error` status, if a step does not complete within `JOB_TIMEOUT` minutes, or if the stable IDs list is incomplete (see below). Failing landing page and mail steps are only logged as warnings.
 
-The job can be re-run after it failed or timed out; it picks up from where the previous run stopped. Note that `<DATASET_FOLDER>-stableIDs.txt`, attached to the mail to the uploader, only lists the files mapped to the dataset during the current run, so check it before the mail is sent if a re-run is past the dataset step.
+The job can be re-run after it failed or timed out; it picks up from where the previous run stopped.
+
+#### incomplete stable IDs list after a re-run
+
+The mail to the uploader has `<DATASET_FOLDER>-stableIDs.txt` attached, which lists the stable ID of every file in the dataset. The job writes this file inside the job pod from the files the API returns, and the API no longer returns files that are part of a dataset. So when a previous run had already mapped files to the dataset, the re-run can not write a complete list:
+
+- if some files were mapped by the previous run, the file only lists the files mapped during the re-run
+- if all files were mapped by the previous run, the file is not written at all
+
+Before sending any mail, the job checks that the file lists every dataset file. If it does not, no mail is sent and the job fails with e.g.:
+
+```text
+Error: not sending mail notifications: stable IDs file /data/DATASET_ABC-stableIDs.txt lists 120 of 500 dataset files
+```
+
+or `... stable IDs file /data/DATASET_ABC-stableIDs.txt does not exist, expected 500 dataset files`. The dataset itself is complete at this point, and the landing page step has already run; only the notification mails are missing. Send them manually as described below.
+
+#### sending the notification mails manually
+
+`bpctl mail` sends the same three mails as the job. Run it from the dataset's working directory created by `validator.sh` (see [validator/README.md](validator/README.md)), on a machine that can reach the SMTP server (`MAIL_SMTP_HOST`, default `mail.nbis.se:587`). That directory already has everything else `bpctl mail` needs:
+
+- `config.yaml` with `USER_ID`, `DATASET_ID`, `DATASET_FOLDER` and the `MAIL_UPLOADER*` values
+- `data/xml/` with `dataset.txt`, `rems.txt` and `policy.txt`
+
+`bpctl mail` reads `config.yaml` and `data/` by default, so only the stable IDs list and the mail account credentials are missing.
+
+1. Rebuild the complete stable IDs list from the database and save it to `data/`. The output has the same format as the file the job writes: one `<stable ID> <inbox path>` per line.
+
+    ```bash
+    cd <working directory of DATASET_FOLDER>
+
+    PRIMARY=$(kubectl -n sda-prod get pods -l cnpg.io/instanceRole=primary -o name)
+    kubectl -n sda-prod exec $PRIMARY -- psql -U postgres -d sda -At -F ' ' -c "
+      SELECT f.stable_id, f.submission_file_path
+      FROM   sda.files f
+      JOIN   sda.file_dataset fd ON fd.file_id = f.id
+      JOIN   sda.datasets d ON d.id = fd.dataset_id
+      WHERE  d.stable_id = '<DATASET_ID>'
+      ORDER  BY f.submission_file_path" > data/<DATASET_FOLDER>-stableIDs.txt
+
+    wc -l < data/<DATASET_FOLDER>-stableIDs.txt   # should equal the number of files in the dataset
+    ```
+
+2. Get the mail account credentials from the cluster:
+
+    ```bash
+    export MAIL_ADDRESS=$(kubectl -n sda-prod get secret sda-bpctl-mail -o jsonpath='{.data.MAIL_ADDRESS}' | base64 -d)
+    export MAIL_PASSWORD=$(kubectl -n sda-prod get secret sda-bpctl-mail -o jsonpath='{.data.MAIL_PASSWORD}' | base64 -d)
+    ```
+
+3. Do a dry run. It renders all three mails and checks that every attachment exists and is not empty, but sends nothing:
+
+    ```bash
+    bpctl mail --dry-run
+    ```
+
+4. Send the mails:
+
+    ```bash
+    bpctl mail
+    ```
+
+5. Check the bp-notify mailbox. Every notification mail is sent with a BCC to the sender address (`MAIL_ADDRESS`), so it holds a copy of each mail. The copy of the mail to the uploader, "Successful Ingestion of Your Dataset Submission", should have the complete `<DATASET_FOLDER>-stableIDs.txt` attached.
 
 The job requires an SDA API version that provides `GET /dataset/{datasetID}`, i.e. `v4.0.0` or later.
 
