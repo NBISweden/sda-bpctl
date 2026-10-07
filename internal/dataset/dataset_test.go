@@ -15,13 +15,13 @@ import (
 )
 
 type mockClient struct {
-	UserFiles           []models.FileInfo
-	UserFilesWithPrefix []models.FileInfo
-	Response            *http.Response
+	UserFiles        []models.FileInfo
+	UserDatasetFiles []models.FileInfo
+	Response         *http.Response
 }
 
-func (m *mockClient) GetUsersFilesWithPrefix() ([]models.FileInfo, error) {
-	return m.UserFilesWithPrefix, nil
+func (m *mockClient) GetUsersDatasetFiles() ([]models.FileInfo, error) {
+	return m.UserDatasetFiles, nil
 }
 
 func (m *mockClient) PostFileIngest(data []byte) ([]byte, error) {
@@ -53,7 +53,7 @@ func (m *mockClient) PostDatasetCreate(payload []byte) ([]byte, error) {
 }
 
 func (m *mockClient) GetFilesWithStatus(status string) ([]models.FileInfo, error) {
-	return m.UserFilesWithPrefix, nil
+	return m.UserDatasetFiles, nil
 }
 
 func (m *mockClient) WaitForStatus(target int, status string, interval time.Duration, timeout time.Duration) ([]models.FileInfo, error) {
@@ -63,7 +63,7 @@ func (m *mockClient) WaitForStatus(target int, status string, interval time.Dura
 func newMockClient(userID string, datasetFolder string) *mockClient {
 	// data is mocked so that we expect 2 files to be included in the dataset
 	mock := &mockClient{
-		UserFilesWithPrefix: []models.FileInfo{
+		UserDatasetFiles: []models.FileInfo{
 			{InboxPath: fmt.Sprintf("/%s/%s/file1.c4gh", userID, datasetFolder), Status: "verified"},
 			{InboxPath: fmt.Sprintf("/%s/%s/file2.c4gh", userID, datasetFolder), Status: "verified"},
 		},
@@ -93,7 +93,7 @@ func TestDataset(t *testing.T) {
 	t.Run("Test Dataset", func(t *testing.T) {
 		datasetCmd.Flag("data-directory").Value.Set(workingDirectory)
 		var files []models.FileInfo
-		files, err := mock.GetUsersFilesWithPrefix()
+		files, err := mock.GetUsersDatasetFiles()
 		if err != nil {
 			t.Error(err)
 		}

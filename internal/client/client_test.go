@@ -107,11 +107,11 @@ func assertFileIDs(t *testing.T, got, want []models.FileInfo) {
 	}
 }
 
-func TestGetUsersFilesWithPrefixSinglePage(t *testing.T) {
+func TestGetUsersDatasetFilesSinglePage(t *testing.T) {
 	api := &fakeFilesAPI{files: makeFiles(3, "DATASET_TEST"), pageSize: 1000}
 	c := newTestClient(t, api)
 
-	files, err := c.GetUsersFilesWithPrefix()
+	files, err := c.GetUsersDatasetFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,12 +125,12 @@ func TestGetUsersFilesWithPrefixSinglePage(t *testing.T) {
 	}
 }
 
-func TestGetUsersFilesWithPrefixFollowsCursor(t *testing.T) {
+func TestGetUsersDatasetFilesFollowsCursor(t *testing.T) {
 	// 2500 files with the API's default page size of 1000 -> 3 pages
 	api := &fakeFilesAPI{files: makeFiles(2500, "DATASET_TEST"), pageSize: 1000}
 	c := newTestClient(t, api)
 
-	files, err := c.GetUsersFilesWithPrefix()
+	files, err := c.GetUsersDatasetFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,12 +155,12 @@ func TestGetUsersFilesWithPrefixFollowsCursor(t *testing.T) {
 	}
 }
 
-func TestGetUsersFilesWithPrefixExactPageBoundary(t *testing.T) {
+func TestGetUsersDatasetFilesExactPageBoundary(t *testing.T) {
 	// exactly two full pages: no cursor on the last page, so no empty third request
 	api := &fakeFilesAPI{files: makeFiles(2000, "DATASET_TEST"), pageSize: 1000}
 	c := newTestClient(t, api)
 
-	files, err := c.GetUsersFilesWithPrefix()
+	files, err := c.GetUsersDatasetFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,11 +171,11 @@ func TestGetUsersFilesWithPrefixExactPageBoundary(t *testing.T) {
 	}
 }
 
-func TestGetUsersFilesWithPrefixNoFiles(t *testing.T) {
+func TestGetUsersDatasetFilesNoFiles(t *testing.T) {
 	api := &fakeFilesAPI{pageSize: 1000}
 	c := newTestClient(t, api)
 
-	files, err := c.GetUsersFilesWithPrefix()
+	files, err := c.GetUsersDatasetFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,13 +184,13 @@ func TestGetUsersFilesWithPrefixNoFiles(t *testing.T) {
 	}
 }
 
-func TestGetUsersFilesWithPrefixOnlyDatasetFolder(t *testing.T) {
+func TestGetUsersDatasetFilesOnlyDatasetFolder(t *testing.T) {
 	wanted := makeFiles(5, "DATASET_TEST")
 	all := append(makeFiles(4, "DATASET_OTHER"), wanted...)
 	api := &fakeFilesAPI{files: all, pageSize: 2}
 	c := newTestClient(t, api)
 
-	files, err := c.GetUsersFilesWithPrefix()
+	files, err := c.GetUsersDatasetFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +201,7 @@ func TestGetUsersFilesWithPrefixOnlyDatasetFolder(t *testing.T) {
 	}
 }
 
-func TestGetUsersFilesWithPrefixErrorOnLaterPage(t *testing.T) {
+func TestGetUsersDatasetFilesErrorOnLaterPage(t *testing.T) {
 	api := &fakeFilesAPI{files: makeFiles(5, "DATASET_TEST"), pageSize: 2}
 	// fail the second page with a non-retryable status so the test does not wait on backoff
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -216,7 +216,7 @@ func TestGetUsersFilesWithPrefixErrorOnLaterPage(t *testing.T) {
 	})
 	c := newTestClient(t, handler)
 
-	files, err := c.GetUsersFilesWithPrefix()
+	files, err := c.GetUsersDatasetFiles()
 	if err == nil {
 		t.Fatal("expected an error when a later page fails, got nil")
 	}
@@ -225,7 +225,7 @@ func TestGetUsersFilesWithPrefixErrorOnLaterPage(t *testing.T) {
 	}
 }
 
-func TestGetUsersFilesWithPrefixRepeatedCursor(t *testing.T) {
+func TestGetUsersDatasetFilesRepeatedCursor(t *testing.T) {
 	requests := 0
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
@@ -239,7 +239,7 @@ func TestGetUsersFilesWithPrefixRepeatedCursor(t *testing.T) {
 	})
 	c := newTestClient(t, handler)
 
-	_, err := c.GetUsersFilesWithPrefix()
+	_, err := c.GetUsersDatasetFiles()
 	if err == nil {
 		t.Fatal("expected an error for a repeated cursor, got nil")
 	}
@@ -254,7 +254,7 @@ func TestGetUsersFilesWithPrefixRepeatedCursor(t *testing.T) {
 func TestDoRequestNotFound(t *testing.T) {
 	c := newTestClient(t, http.NotFoundHandler())
 
-	_, err := c.GetUsersFilesWithPrefix()
+	_, err := c.GetUsersDatasetFiles()
 	if !errors.Is(err, ErrNotFound) {
 		t.Errorf("expected ErrNotFound, got %v", err)
 	}

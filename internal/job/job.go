@@ -139,7 +139,7 @@ func runJob() error {
 // previous run is counted twice rather than missed: the job then times out
 // instead of sending notifications for a partial dataset.
 func countDatasetFiles(api client.APIClient, datasetFolder string, datasetID string) (notMapped int, mapped int, err error) {
-	allFiles, err := api.GetUsersFilesWithPrefix()
+	allFiles, err := api.GetUsersDatasetFiles()
 	if err != nil {
 		return 0, 0, err
 	}
@@ -165,7 +165,7 @@ func countDatasetFiles(api client.APIClient, datasetFolder string, datasetID str
 func waitForDatasetFiles(api client.APIClient, datasetFolder string, target int, statuses []string, interval time.Duration, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for {
-		allFiles, err := api.GetUsersFilesWithPrefix()
+		allFiles, err := api.GetUsersDatasetFiles()
 		if err != nil {
 			return err
 		}

@@ -12,7 +12,7 @@ type mockClient struct {
 	FilesToReturn []models.FileInfo
 }
 
-func (m *mockClient) GetUsersFilesWithPrefix() ([]models.FileInfo, error) {
+func (m *mockClient) GetUsersDatasetFiles() ([]models.FileInfo, error) {
 	return m.FilesToReturn, nil
 }
 

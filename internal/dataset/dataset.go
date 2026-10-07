@@ -44,7 +44,7 @@ var datasetCmd = &cobra.Command{
 
 		var files []models.FileInfo
 
-		files, err = api.GetUsersFilesWithPrefix()
+		files, err = api.GetUsersDatasetFiles()
 		if err != nil {
 			return err
 		}

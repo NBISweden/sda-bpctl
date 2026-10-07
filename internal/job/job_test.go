@@ -11,7 +11,7 @@ import (
 )
 
 type mockClient struct {
-	// UserFiles is returned by successive GetUsersFilesWithPrefix calls; the
+	// UserFiles is returned by successive GetUsersDatasetFiles calls; the
 	// last entry is repeated once exhausted.
 	UserFiles [][]models.FileInfo
 	// Datasets is returned by successive GetDataset calls in the same way.
@@ -22,7 +22,7 @@ type mockClient struct {
 	datasetCalls   int
 }
 
-func (m *mockClient) GetUsersFilesWithPrefix() ([]models.FileInfo, error) {
+func (m *mockClient) GetUsersDatasetFiles() ([]models.FileInfo, error) {
 	i := min(m.userFilesCalls, len(m.UserFiles)-1)
 	m.userFilesCalls++
 	return m.UserFiles[i], nil
@@ -197,7 +197,7 @@ func TestWaitForDatasetFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	if mock.userFilesCalls != 3 {
-		t.Errorf("got %d GetUsersFilesWithPrefix calls, want 3", mock.userFilesCalls)
+		t.Errorf("got %d GetUsersDatasetFiles calls, want 3", mock.userFilesCalls)
 	}
 }
 
