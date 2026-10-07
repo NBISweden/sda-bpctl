@@ -259,3 +259,23 @@ func TestDoRequestNotFound(t *testing.T) {
 		t.Errorf("expected ErrNotFound, got %v", err)
 	}
 }
+
+func TestGetFilesWithStatus(t *testing.T) {
+	files := []models.FileInfo{
+		{FileID: "uploaded1", InboxPath: "DATASET_TEST/file1.c4gh", Status: "uploaded"},
+		{FileID: "uploaded2", InboxPath: "DATASET_TEST/sub/file2.c4gh", Status: "uploaded"},
+		{FileID: "verified", InboxPath: "DATASET_TEST/file3.c4gh", Status: "verified"},
+		{FileID: "private", InboxPath: "DATASET_TEST/PRIVATE/file4.c4gh", Status: "uploaded"},
+		{FileID: "landingpage", InboxPath: "DATASET_TEST/LANDING_PAGE/index.html.c4gh", Status: "uploaded"},
+		{FileID: "otherfolder", InboxPath: "DATASET_OTHER/file5.c4gh", Status: "uploaded"},
+	}
+	api := &fakeFilesAPI{files: files, pageSize: 2}
+	c := newTestClient(t, api)
+
+	got, err := c.GetFilesWithStatus("uploaded")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertFileIDs(t, got, []models.FileInfo{{FileID: "uploaded1"}, {FileID: "uploaded2"}})
+}

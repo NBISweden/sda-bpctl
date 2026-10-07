@@ -6,7 +6,6 @@ import (
 	"log/slog"
 
 	"github.com/NBISweden/sda-bpctl/cmd"
-	"github.com/NBISweden/sda-bpctl/helpers"
 	"github.com/NBISweden/sda-bpctl/internal/client"
 	"github.com/NBISweden/sda-bpctl/internal/config"
 	"github.com/NBISweden/sda-bpctl/internal/models"
@@ -32,11 +31,7 @@ var ingestCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		files, err := api.GetUsersFilesWithPrefix()
-		if err != nil {
-			return err
-		}
-		_, err = ingestFiles(api, cfg.DatasetFolder, cfg.UserID, files)
+		_, err = Run(api, cfg.DatasetFolder, cfg.UserID)
 		if err != nil {
 			return err
 		}
@@ -52,19 +47,18 @@ func init() {
 }
 
 func Run(api client.APIClient, datasetFolder string, userID string) (int, error) {
-	files, err := api.GetUsersFilesWithPrefix()
+	files, err := api.GetFilesWithStatus("uploaded")
 	if err != nil {
 		return 0, err
 	}
 
-	return ingestFiles(api, datasetFolder, userID, files)
+	return ingestFiles(api, userID, files)
 }
 
-func ingestFiles(api client.APIClient, datasetFolder string, userID string, files []models.FileInfo) (int, error) {
+func ingestFiles(api client.APIClient, userID string, files []models.FileInfo) (int, error) {
 	slog.Info("starting ingest")
-	fileList := helpers.FilterFiles(files, datasetFolder)
-	filesCount := len(fileList)
-	okResponses := len(fileList)
+	filesCount := len(files)
+	okResponses := len(files)
 
 	slog.Info("number of files to ingest", "filesCount", filesCount)
 	if dryRun {
@@ -72,9 +66,9 @@ func ingestFiles(api client.APIClient, datasetFolder string, userID string, file
 		return filesCount, nil
 	}
 
-	for _, path := range fileList {
+	for _, file := range files {
 		payload := map[string]string{
-			"filepath": path,
+			"filepath": file.InboxPath,
 			"user":     userID,
 		}
 		data, _ := json.Marshal(payload)
@@ -82,7 +76,7 @@ func ingestFiles(api client.APIClient, datasetFolder string, userID string, file
 		_, err := api.PostFileIngest(data)
 		if err != nil {
 			okResponses--
-			slog.Warn("file not ingested", "filepath", path, "err", err)
+			slog.Warn("file not ingested", "filepath", file.InboxPath, "err", err)
 		}
 	}
 

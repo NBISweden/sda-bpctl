@@ -250,7 +250,8 @@ func (c *Client) GetFilesWithStatus(status string) ([]models.FileInfo, error) {
 	for _, f := range allFiles {
 		if f.Status == status &&
 			strings.Contains(f.InboxPath, c.datasetFolder) &&
-			!strings.Contains(f.InboxPath, "PRIVATE") {
+			!strings.Contains(f.InboxPath, "PRIVATE") &&
+			!strings.Contains(f.InboxPath, "LANDING_PAGE") {
 			filteredFiles = append(filteredFiles, f)
 		}
 	}

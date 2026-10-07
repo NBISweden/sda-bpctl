@@ -147,18 +147,6 @@ func GetStableIDsPath(dataDirectory string, datasetFolder string) string {
 	return fmt.Sprintf("%s/%s-stableIDs.txt", dataDirectory, datasetFolder)
 }
 
-// FilterFiles returns the files that belong to the dataset and have been uploaded.
-func FilterFiles(files []models.FileInfo, datasetFolder string) []string {
-	var filteredFiles []string
-	for _, f := range FilterDatasetFiles(files, datasetFolder) {
-		if f.Status != "uploaded" {
-			continue
-		}
-		filteredFiles = append(filteredFiles, f.InboxPath)
-	}
-	return filteredFiles
-}
-
 // FilterDatasetFiles returns the files that belong to the dataset regardless
 // of their status, i.e. files in datasetFolder excluding PRIVATE and
 // LANDING_PAGE files.
