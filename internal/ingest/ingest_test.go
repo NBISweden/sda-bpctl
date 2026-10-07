@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -12,6 +13,9 @@ type mockClient struct {
 	FilesToReturn []models.FileInfo
 	Response      []byte
 	CallIndex     int
+
+	requestedStatus string
+	ingestedPaths   []string
 }
 
 func (m *mockClient) GetUsersFilesWithPrefix() ([]models.FileInfo, error) {
@@ -19,6 +23,11 @@ func (m *mockClient) GetUsersFilesWithPrefix() ([]models.FileInfo, error) {
 }
 
 func (m *mockClient) PostFileIngest(data []byte) ([]byte, error) {
+	var payload map[string]string
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil, err
+	}
+	m.ingestedPaths = append(m.ingestedPaths, payload["filepath"])
 	return m.Response, nil
 }
 
@@ -34,8 +43,17 @@ func (m *mockClient) PostDatasetCreate(payload []byte) ([]byte, error) {
 	return m.Response, nil
 }
 
+// GetFilesWithStatus only filters on status; the dataset folder, PRIVATE and
+// LANDING_PAGE filtering is done by the real client and tested there.
 func (m *mockClient) GetFilesWithStatus(status string) ([]models.FileInfo, error) {
-	return nil, nil
+	m.requestedStatus = status
+	var files []models.FileInfo
+	for _, f := range m.FilesToReturn {
+		if f.Status == status {
+			files = append(files, f)
+		}
+	}
+	return files, nil
 }
 
 func (m *mockClient) WaitForStatus(target int, status string, interval time.Duration, timeout time.Duration) ([]models.FileInfo, error) {
@@ -47,7 +65,7 @@ func setup(userID string, datasetFolder string) *mockClient {
 		FilesToReturn: []models.FileInfo{
 			{InboxPath: fmt.Sprintf("/%s/%s/file1.c4gh", userID, datasetFolder), Status: "uploaded"},
 			{InboxPath: fmt.Sprintf("/%s/%s/file2.c4gh", userID, datasetFolder), Status: "uploaded"},
-			{InboxPath: fmt.Sprintf("/%s/PRIVATE/%s/file4.c4gh", userID, datasetFolder), Status: "uploaded"},
+			{InboxPath: fmt.Sprintf("/%s/%s/file3.c4gh", userID, datasetFolder), Status: "verified"},
 			{InboxPath: fmt.Sprintf("/%s/%s/file5.c4gh", userID, datasetFolder), Status: "error"},
 		},
 		Response: []byte("ok"),
@@ -58,22 +76,30 @@ func setup(userID string, datasetFolder string) *mockClient {
 func TestIngest(t *testing.T) {
 	userID := "testuser"
 	datasetFolder := "DATASET_TEST"
-	expectedFiles := 2
 	mock := setup(userID, datasetFolder)
 
-	t.Run("Test Ingest", func(t *testing.T) {
-		userFiles, err := mock.GetUsersFilesWithPrefix()
-		if err != nil {
-			t.Error(err)
+	files, err := Run(mock, datasetFolder, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if mock.requestedStatus != "uploaded" {
+		t.Errorf("requested files with status %q, want %q", mock.requestedStatus, "uploaded")
+	}
+
+	expectedPaths := []string{
+		fmt.Sprintf("/%s/%s/file1.c4gh", userID, datasetFolder),
+		fmt.Sprintf("/%s/%s/file2.c4gh", userID, datasetFolder),
+	}
+	if files != len(expectedPaths) {
+		t.Errorf("ingested %d files, want %d", files, len(expectedPaths))
+	}
+	if len(mock.ingestedPaths) != len(expectedPaths) {
+		t.Fatalf("posted %d ingest requests, want %d: %v", len(mock.ingestedPaths), len(expectedPaths), mock.ingestedPaths)
+	}
+	for i, path := range expectedPaths {
+		if mock.ingestedPaths[i] != path {
+			t.Errorf("ingest request %d: filepath = %q, want %q", i, mock.ingestedPaths[i], path)
 		}
-		files, err := ingestFiles(mock, datasetFolder, userID, userFiles)
-		if err != nil {
-			t.Error(err)
-		}
-		if files != expectedFiles {
-			t.Logf("ingested %d/%d files", files, expectedFiles)
-			t.FailNow()
-		}
-		t.Logf("ingested %d/%d files sucessfully", files, expectedFiles)
-	})
+	}
 }
