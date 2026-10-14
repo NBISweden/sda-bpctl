@@ -133,6 +133,7 @@ EMAIL=""
 ACCESS_TOKEN=""
 version=""
 dataset_id=""
+contains_annotations=""
 
 function help {
     cat << END_USAGE
@@ -386,7 +387,8 @@ function validate_private_files {
 
 function validate_files {
     cecho yellow "Validating METADATA folder files ..."
-    expected_metadata_content=("dataset" "policy" "image" "annotation" "observation" "sample" "staining")
+    expected_metadata_content=("dataset" "policy" "image" "observation" "sample" "staining")
+
     inbox_metadata_files=$(for bucket in "${INBOX_BUCKETS[@]}"; do
         s3cmd_command ls "s3://${bucket}/${user}/${dataset}/METADATA/" 2>/dev/null
     done | awk -F'_lifescience-ri.eu/|_elixir-europe.org/' '{print $2}' | cut -d'/' -f3 | sort -u | tr '\n' ' ')
@@ -395,22 +397,12 @@ function validate_files {
         s3cmd_command ls "s3://${bucket}/${user}/${dataset}/PRIVATE/" 2>/dev/null
     done | awk -F'_lifescience-ri.eu/|_elixir-europe.org/' '{print $2}' | cut -d'/' -f3 | sort -u | tr '\n' ' ')
     read -r -a metadata_private_files <<<"$inbox_private_files"
-    if [[ "$1" == "false" ]]; then
-        # Remove the annotation and observer from the expected_metadata_content
-        unset 'expected_metadata_content[3]'
-        expected_metadata_content=("${expected_metadata_content[@]}")
-        local has_annotation=false
-        # Check if "annotation" or "observer" is in the metadata_files
-        for mf in "${metadata_files[@]}"; do
-            if [[ "$mf" == "annotation"* ]]; then
-                has_annotation=true
-                break
-            fi
-        done
-        if [[ "$has_annotation" == true ]]; then
-            cecho red "ERROR: 'annotation.xml' should not exist because the 'ANNOTATIONS' directory is missing." | tee -a "$WORKDIR/general_errors.logs"
-            ERROR_STATUS=1
+
+    if [[ "$contains_annotations" == true ]]; then
+        if [[ "$version" == "v3" ]]; then
+            expected_metadata_content+=("annotation_task" "annotator" "ontology")
         fi
+        expected_metadata_content+=("annotation")
     fi
 
     # Check if any metadata files are missing
@@ -455,33 +447,25 @@ function validate_files {
     fi
 }
 
+
 function validate_structure {
     cecho yellow "Validating folder structure ..."
-    annotations=true
     main_folder="$dataset"
     inbox_subfolders=$(for bucket in "${INBOX_BUCKETS[@]}"; do
         s3cmd_command ls "s3://${bucket}/${user}/${dataset}/" 2>/dev/null
     done | awk -F'_lifescience-ri.eu/|_elixir-europe.org/' '{print $2}' | cut -d'/' -f2 | sort -u)
     IFS=$'\n' read -r -d '' -a subfolders <<<"$inbox_subfolders"$'\n'
-    expected_subfolders=("METADATA" "IMAGES" "ANNOTATIONS" "PRIVATE" "LANDING_PAGE")
+
+    expected_subfolders=("METADATA" "IMAGES" "PRIVATE" "LANDING_PAGE")
+    if [[ "$contains_annotations" == true ]]; then
+        expected_subfolders+=("ANNOTATIONS")
+    fi
+    if [[ "$version" == "v3" ]] && [[ "$contains_annotations" == true ]]; then
+        expected_subfolders=("${expected_subfolders[@]}" "ANNOTATION_TASKS" "ONTOLOGIES")
+    fi
     if [[ "$main_folder" != "DATASET_"* ]]; then
         cecho red "ERROR: Main folder does not start with DATASET_" | tee -a "$WORKDIR/general_errors.logs"
         ERROR_STATUS=1
-    fi
-
-    # Check if annotations folder exists in the subfolders
-    # If it does not then remove it from the expected_subfolders
-    local has_annotations=false
-    for sf in "${subfolders[@]}"; do
-        if [[ "$sf" == "ANNOTATIONS" ]]; then
-            has_annotations=true
-            break
-        fi
-    done
-    if [[ "$has_annotations" == false ]]; then
-        unset 'expected_subfolders[2]'
-        expected_subfolders=("${expected_subfolders[@]}")
-        annotations=false
     fi
 
     local has_landing_page=false
@@ -496,13 +480,8 @@ function validate_structure {
     # If it does not then remove it from the expected_subfolders
     # If it exists, check if THUMBNAILS folder exists and contains files
     if [[ "$has_landing_page" == false ]]; then
-        if [[ "$annotations" == "false" ]]; then
             unset 'expected_subfolders[3]'
             expected_subfolders=("${expected_subfolders[@]}")
-        else
-            unset 'expected_subfolders[4]'
-            expected_subfolders=("${expected_subfolders[@]}")
-        fi
     else
         thumbnail_files=$(for bucket in "${INBOX_BUCKETS[@]}"; do
             s3cmd_command ls "s3://${bucket}/${user}/${dataset}/LANDING_PAGE/THUMBNAILS/" --recursive 2>/dev/null
@@ -570,7 +549,7 @@ function validate_structure {
 
     cecho green "Done"
 
-    validate_files "$annotations"
+    validate_files
 }
 
 # Function for downloading the xml metadata files from the inbox
@@ -662,6 +641,23 @@ function find_metadata_version {
     fi
 }
 
+
+function check_annotation_metadata {
+    contains_annotations=false
+
+    for bucket in "${INBOX_BUCKETS[@]}"; do
+
+        local metadata_annotations=$(s3cmd_command ls "s3://${bucket}/${user}/${dataset}/METADATA/annotation.xml.c4gh" 2>/dev/null)
+        echo "metadata_annotations: $metadata_annotations"
+        if [[ -n "$metadata_annotations" ]]; then
+            contains_annotations=true
+            echo "Dataset contains annotation metadata"
+            return
+        fi
+    done
+
+    echo "Dataset does not contain annotation metadata"
+}
 
 # Functions for validating xml files with xsd v1 and v2.
 # - It creates a list of all xsd files and a list of all xml files.
@@ -1060,7 +1056,9 @@ decrypt_xml_files
 
 find_metadata_version || exit 1
 
-validate_structure "$version"
+check_annotation_metadata
+
+validate_structure
 
 get_xsd_files
 
