@@ -10,6 +10,18 @@ The `validator.sh` script can be used for
 - Moving `PRIVATE` and `LANDING_PAGE` folders in the metadata bucket
 - Creating Kubernetes job manifest and deploy the job in case of prod cluster
 
+## Metadata Schema Versions
+
+The validator identifies v1 datasets when `METADATA_STANDARD` is absent, v2
+datasets for `2.x.y`, and v3 datasets for `3.x.y`. The `METADATA` xml files are
+validated against the matching version's XSDs.
+
+The currently configured v3 schema
+reference is `v3.0.0-rc.1`; update it to the final release tag when one is
+published.
+
+An overview of the content of a submission (version 3) can be found [here](https://raw.githubusercontent.com/imi-bigpicture/bigpicture-metaflex/refs/heads/graph/bigpicture_entities.dot.svg).
+
 ## Prerequisites & Working Directory Recommendation
 
 Before running the script, ensure you are logged into Vault and that `bpctl` is available in your `$PATH`.
