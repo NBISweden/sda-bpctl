@@ -285,9 +285,14 @@ function sanitize_user_dataset {
 function get_xsd_files {
     cecho yellow "Getting xsd files ..."
     mkdir -p "$WORKDIR/xsd-files"
+    local schema_ref="${version}.0.0"
+    # TODO skip this when version v3 is fully released
+    if [[ "$version" == "v3" ]]; then
+        schema_ref="v3.0.0-rc.1"
+    fi
 
     curl -H "Accept: application/vnd.github.v3+json" \
-       https://api.github.com/repos/imi-bigpicture/bigpicture-metaflex/contents/src?ref=$version.0.0 | jq -r '.[] | .download_url' |
+       "https://api.github.com/repos/imi-bigpicture/bigpicture-metaflex/contents/src?ref=$schema_ref" | jq -r '.[] | .download_url' |
     while IFS= read -r url; do
         xsd_name=$(basename "$url")
         curl -o "$WORKDIR/xsd-files/${xsd_name%\?*}" -J -L "$url" >/dev/null 2>&1
@@ -569,6 +574,9 @@ function validate_structure {
 }
 
 # Function for downloading the xml metadata files from the inbox
+# - Downloads the xml metadata files from the inbox buckets into the local xml-files folder
+# - Checks if there should be a landing_page.xml and download it
+# - Checks if the xml-files folder is empty
 function get_xml_files {
     mkdir -p "$WORKDIR/xml-files"
     cecho yellow "Getting xml files ..."
@@ -582,7 +590,19 @@ function get_xml_files {
             s3cmd_command get "$private_path" --recursive "$WORKDIR/xml-files/" >/dev/null 2>&1
         fi
     done
-    if [[ "$LANDING_PAGE" == "true" ]]; then
+
+    local has_landing_page=false
+    # Check if there is a LANDING_PAGE folder in the inbox bucket
+    for bucket in "${INBOX_BUCKETS[@]}"; do
+        local landing_page_listing=$(s3cmd_command ls \
+            "s3://${bucket}/${user}/${dataset}/LANDING_PAGE/" 2>/dev/null)
+        if [[ -n "$landing_page_listing" ]]; then
+            has_landing_page=true
+            break
+        fi
+    done
+    # if there is a LANDING_PAGE folder, download the corresponding landing_page.xml file
+    if [[ "$has_landing_page" == "true" ]]; then
         for bucket in "${INBOX_BUCKETS[@]}"; do
             landing_page_path="s3://${bucket}/${user}/${dataset}/LANDING_PAGE/landing_page.xml"
             s3cmd_command get "$landing_page_path" --recursive "$WORKDIR/xml-files/" >/dev/null 2>&1
@@ -590,7 +610,6 @@ function get_xml_files {
         if [[ ! -f "$WORKDIR/xml-files/landing_page.xml.c4gh" ]]; then
             cecho red "ERROR: landing_page.xml is missing" | tee -a "$WORKDIR/general_errors.logs"
             ERROR_STATUS=1
-            LANDING_PAGE=false
         fi
     fi
 
@@ -622,18 +641,28 @@ function decrypt_xml_files {
 }
 
 # Function for finding the metadata version
-# - Checks if the METADATA_STANDARD tag exists in the dataset.xml file
-# - If it does exist then the metadata version is v2
+# - Reads the METADATA_STANDARD value in dataset.xml
+# - If the tag does not exist, it assumes the metadata version is v1.
 function find_metadata_version {
+
     xml_version=$(xmllint --xpath 'string(/DATASET_SET/DATASET/METADATA_STANDARD)' "$WORKDIR/xml-files/dataset.xml")
-    if [[ "$xml_version" == "" ]]; then
+    if [[ -z "$xml_version" ]]; then
         version="v1"
         cecho green "Metadata version is v1"
-    else
-        cecho green "Metadata version is v2"
+    elif [[ "$xml_version" =~ ^2\.[0-9]+\.[0-9]+$ ]]; then
         version="v2"
+        cecho green "Metadata version is v2"
+    elif [[ "$xml_version" =~ ^3\.[0-9]+\.[0-9]+$ ]]; then
+        version="v3"
+        cecho green "Metadata version is v3"
+    else
+        cecho red "ERROR: Unsupported METADATA_STANDARD value: $xml_version" | tee -a "$WORKDIR/general_errors.logs"
+        ERROR_STATUS=1
+        return 1
     fi
 }
+
+
 # Functions for validating xml files with xsd v1 and v2.
 # - It creates a list of all xsd files and a list of all xml files.
 # - Loops over all xml files (ignoring the c4gh files) and extracts the root element name.
@@ -1023,15 +1052,15 @@ fi
 # Validation steps
 check_file_sizes
 
-validate_structure
-
 get_xml_files
 
 trap remove_private_key EXIT HUP INT QUIT PIPE TERM
 
 decrypt_xml_files
 
-find_metadata_version
+find_metadata_version || exit 1
+
+validate_structure "$version"
 
 get_xsd_files
 
