@@ -424,6 +424,7 @@ function validate_files {
     for metadata_file in "${metadata_files[@]}"; do
         file_basename=$(basename "$metadata_file" | cut -d'.' -f1)
         if [[ "$file_basename" == "observer" ]]; then
+            # observer is optional
             continue
         fi
         local matched=false
@@ -659,7 +660,7 @@ function check_annotation_metadata {
     echo "Dataset does not contain annotation metadata"
 }
 
-# Functions for validating xml files with xsd v1 and v2.
+# Functions for validating xml files with xsd v1, v2 and v3.
 # - It creates a list of all xsd files and a list of all xml files.
 # - Loops over all xml files (ignoring the c4gh files) and extracts the root element name.
 # - For each xml file it loops over the xsd files (starting from the "BP" ones and ignoring
@@ -750,6 +751,44 @@ function validate_with_xsd_v2 {
         ERROR_STATUS=1
     else
         cecho green "Validation succeeded for xml files"
+    fi
+}
+
+function validate_with_xsd_v3 {
+    cecho yellow "Validation for v3 xml files started..."
+    local error_flag=0
+    local xml xml_base xml_name xsd
+    local xml_files=("$WORKDIR"/xml-files/*.xml)
+
+    if [[ ! -f "${xml_files[0]}" ]]; then
+        cecho red "ERROR: No XML files found for validation" | tee -a "$WORKDIR/general_errors.logs"
+        ERROR_STATUS=1
+        return
+    fi
+
+    for xml in "${xml_files[@]}"; do
+        xml_base=$(basename "$xml")
+        xml_name=${xml_base%.xml}
+        xsd="$WORKDIR/xsd-files/BP.${xml_name}.xsd"
+
+        if [[ ! -f "$xsd" ]]; then
+            cecho red "ERROR: No v3 XSD found for $xml (expected $(basename "$xsd"))" | tee -a "$WORKDIR/general_errors.logs"
+            error_flag=1
+            continue
+        fi
+
+        cecho yellow "Validating $xml with $xsd"
+        if ! xmllint --noout --schema "$xsd" "$xml" >/dev/null 2>&1; then
+            cecho red "ERROR: Validation failed for $xml" | tee -a "$WORKDIR/general_errors.logs"
+            xmllint --noout --schema "$xsd" "$xml" > "$WORKDIR/$xml_name.error" 2>&1
+            error_flag=1
+        fi
+    done
+
+    if [[ $error_flag -eq 1 ]]; then
+        ERROR_STATUS=1
+    else
+        cecho green "Validation succeeded for v3 xml files"
     fi
 }
 
