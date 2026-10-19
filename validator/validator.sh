@@ -133,6 +133,7 @@ EMAIL=""
 ACCESS_TOKEN=""
 version=""
 dataset_id=""
+contains_annotations=""
 
 function help {
     cat << END_USAGE
@@ -285,9 +286,14 @@ function sanitize_user_dataset {
 function get_xsd_files {
     cecho yellow "Getting xsd files ..."
     mkdir -p "$WORKDIR/xsd-files"
+    local schema_ref="${version}.0.0"
+    # TODO skip this when version v3 is fully released
+    if [[ "$version" == "v3" ]]; then
+        schema_ref="v3.0.0-rc.1"
+    fi
 
     curl -H "Accept: application/vnd.github.v3+json" \
-       https://api.github.com/repos/imi-bigpicture/bigpicture-metaflex/contents/src?ref=$version.0.0 | jq -r '.[] | .download_url' |
+       "https://api.github.com/repos/imi-bigpicture/bigpicture-metaflex/contents/src?ref=$schema_ref" | jq -r '.[] | .download_url' |
     while IFS= read -r url; do
         xsd_name=$(basename "$url")
         curl -o "$WORKDIR/xsd-files/${xsd_name%\?*}" -J -L "$url" >/dev/null 2>&1
@@ -381,7 +387,8 @@ function validate_private_files {
 
 function validate_files {
     cecho yellow "Validating METADATA folder files ..."
-    expected_metadata_content=("dataset" "policy" "image" "annotation" "observation" "sample" "staining")
+    expected_metadata_content=("dataset" "policy" "image" "observation" "sample" "staining")
+
     inbox_metadata_files=$(for bucket in "${INBOX_BUCKETS[@]}"; do
         s3cmd_command ls "s3://${bucket}/${user}/${dataset}/METADATA/" 2>/dev/null
     done | awk -F'_lifescience-ri.eu/|_elixir-europe.org/' '{print $2}' | cut -d'/' -f3 | sort -u | tr '\n' ' ')
@@ -390,22 +397,12 @@ function validate_files {
         s3cmd_command ls "s3://${bucket}/${user}/${dataset}/PRIVATE/" 2>/dev/null
     done | awk -F'_lifescience-ri.eu/|_elixir-europe.org/' '{print $2}' | cut -d'/' -f3 | sort -u | tr '\n' ' ')
     read -r -a metadata_private_files <<<"$inbox_private_files"
-    if [[ "$1" == "false" ]]; then
-        # Remove the annotation and observer from the expected_metadata_content
-        unset 'expected_metadata_content[3]'
-        expected_metadata_content=("${expected_metadata_content[@]}")
-        local has_annotation=false
-        # Check if "annotation" or "observer" is in the metadata_files
-        for mf in "${metadata_files[@]}"; do
-            if [[ "$mf" == "annotation"* ]]; then
-                has_annotation=true
-                break
-            fi
-        done
-        if [[ "$has_annotation" == true ]]; then
-            cecho red "ERROR: 'annotation.xml' should not exist because the 'ANNOTATIONS' directory is missing." | tee -a "$WORKDIR/general_errors.logs"
-            ERROR_STATUS=1
+
+    if [[ "$contains_annotations" == true ]]; then
+        if [[ "$version" == "v3" ]]; then
+            expected_metadata_content+=("annotation_task" "annotator" "ontology")
         fi
+        expected_metadata_content+=("annotation")
     fi
 
     # Check if any metadata files are missing
@@ -427,6 +424,7 @@ function validate_files {
     for metadata_file in "${metadata_files[@]}"; do
         file_basename=$(basename "$metadata_file" | cut -d'.' -f1)
         if [[ "$file_basename" == "observer" ]]; then
+            # observer is optional
             continue
         fi
         local matched=false
@@ -450,33 +448,25 @@ function validate_files {
     fi
 }
 
+
 function validate_structure {
     cecho yellow "Validating folder structure ..."
-    annotations=true
     main_folder="$dataset"
     inbox_subfolders=$(for bucket in "${INBOX_BUCKETS[@]}"; do
         s3cmd_command ls "s3://${bucket}/${user}/${dataset}/" 2>/dev/null
     done | awk -F'_lifescience-ri.eu/|_elixir-europe.org/' '{print $2}' | cut -d'/' -f2 | sort -u)
     IFS=$'\n' read -r -d '' -a subfolders <<<"$inbox_subfolders"$'\n'
-    expected_subfolders=("METADATA" "IMAGES" "ANNOTATIONS" "PRIVATE" "LANDING_PAGE")
+
+    expected_subfolders=("METADATA" "IMAGES" "PRIVATE" "LANDING_PAGE")
+    if [[ "$contains_annotations" == true ]]; then
+        expected_subfolders+=("ANNOTATIONS")
+    fi
+    if [[ "$version" == "v3" ]] && [[ "$contains_annotations" == true ]]; then
+        expected_subfolders=("${expected_subfolders[@]}" "ANNOTATION_TASKS" "ONTOLOGIES")
+    fi
     if [[ "$main_folder" != "DATASET_"* ]]; then
         cecho red "ERROR: Main folder does not start with DATASET_" | tee -a "$WORKDIR/general_errors.logs"
         ERROR_STATUS=1
-    fi
-
-    # Check if annotations folder exists in the subfolders
-    # If it does not then remove it from the expected_subfolders
-    local has_annotations=false
-    for sf in "${subfolders[@]}"; do
-        if [[ "$sf" == "ANNOTATIONS" ]]; then
-            has_annotations=true
-            break
-        fi
-    done
-    if [[ "$has_annotations" == false ]]; then
-        unset 'expected_subfolders[2]'
-        expected_subfolders=("${expected_subfolders[@]}")
-        annotations=false
     fi
 
     local has_landing_page=false
@@ -491,13 +481,8 @@ function validate_structure {
     # If it does not then remove it from the expected_subfolders
     # If it exists, check if THUMBNAILS folder exists and contains files
     if [[ "$has_landing_page" == false ]]; then
-        if [[ "$annotations" == "false" ]]; then
             unset 'expected_subfolders[3]'
             expected_subfolders=("${expected_subfolders[@]}")
-        else
-            unset 'expected_subfolders[4]'
-            expected_subfolders=("${expected_subfolders[@]}")
-        fi
     else
         thumbnail_files=$(for bucket in "${INBOX_BUCKETS[@]}"; do
             s3cmd_command ls "s3://${bucket}/${user}/${dataset}/LANDING_PAGE/THUMBNAILS/" --recursive 2>/dev/null
@@ -565,10 +550,13 @@ function validate_structure {
 
     cecho green "Done"
 
-    validate_files "$annotations"
+    validate_files
 }
 
 # Function for downloading the xml metadata files from the inbox
+# - Downloads the xml metadata files from the inbox buckets into the local xml-files folder
+# - Checks if there should be a landing_page.xml and download it
+# - Checks if the xml-files folder is empty
 function get_xml_files {
     mkdir -p "$WORKDIR/xml-files"
     cecho yellow "Getting xml files ..."
@@ -582,7 +570,19 @@ function get_xml_files {
             s3cmd_command get "$private_path" --recursive "$WORKDIR/xml-files/" >/dev/null 2>&1
         fi
     done
-    if [[ "$LANDING_PAGE" == "true" ]]; then
+
+    local has_landing_page=false
+    # Check if there is a LANDING_PAGE folder in the inbox bucket
+    for bucket in "${INBOX_BUCKETS[@]}"; do
+        local landing_page_listing=$(s3cmd_command ls \
+            "s3://${bucket}/${user}/${dataset}/LANDING_PAGE/" 2>/dev/null)
+        if [[ -n "$landing_page_listing" ]]; then
+            has_landing_page=true
+            break
+        fi
+    done
+    # if there is a LANDING_PAGE folder, download the corresponding landing_page.xml file
+    if [[ "$has_landing_page" == "true" ]]; then
         for bucket in "${INBOX_BUCKETS[@]}"; do
             landing_page_path="s3://${bucket}/${user}/${dataset}/LANDING_PAGE/landing_page.xml"
             s3cmd_command get "$landing_page_path" --recursive "$WORKDIR/xml-files/" >/dev/null 2>&1
@@ -590,7 +590,6 @@ function get_xml_files {
         if [[ ! -f "$WORKDIR/xml-files/landing_page.xml.c4gh" ]]; then
             cecho red "ERROR: landing_page.xml is missing" | tee -a "$WORKDIR/general_errors.logs"
             ERROR_STATUS=1
-            LANDING_PAGE=false
         fi
     fi
 
@@ -622,19 +621,45 @@ function decrypt_xml_files {
 }
 
 # Function for finding the metadata version
-# - Checks if the METADATA_STANDARD tag exists in the dataset.xml file
-# - If it does exist then the metadata version is v2
+# - Reads the METADATA_STANDARD value in dataset.xml
+# - If the tag does not exist, it assumes the metadata version is v1.
 function find_metadata_version {
+
     xml_version=$(xmllint --xpath 'string(/DATASET_SET/DATASET/METADATA_STANDARD)' "$WORKDIR/xml-files/dataset.xml")
-    if [[ "$xml_version" == "" ]]; then
+    if [[ -z "$xml_version" ]]; then
         version="v1"
         cecho green "Metadata version is v1"
-    else
-        cecho green "Metadata version is v2"
+    elif [[ "$xml_version" =~ ^2\.[0-9]+\.[0-9]+$ ]]; then
         version="v2"
+        cecho green "Metadata version is v2"
+    elif [[ "$xml_version" =~ ^3\.[0-9]+\.[0-9]+$ ]]; then
+        version="v3"
+        cecho green "Metadata version is v3"
+    else
+        cecho red "ERROR: Unsupported METADATA_STANDARD value: $xml_version" | tee -a "$WORKDIR/general_errors.logs"
+        ERROR_STATUS=1
+        return 1
     fi
 }
-# Functions for validating xml files with xsd v1 and v2.
+
+
+function check_annotation_metadata {
+    contains_annotations=false
+
+    for bucket in "${INBOX_BUCKETS[@]}"; do
+
+        local metadata_annotations=$(s3cmd_command ls "s3://${bucket}/${user}/${dataset}/METADATA/annotation.xml.c4gh" 2>/dev/null)
+        if [[ -n "$metadata_annotations" ]]; then
+            contains_annotations=true
+            echo "Dataset contains annotation metadata"
+            return
+        fi
+    done
+
+    echo "Dataset does not contain annotation metadata"
+}
+
+# Functions for validating xml files with xsd v1, v2 and v3.
 # - It creates a list of all xsd files and a list of all xml files.
 # - Loops over all xml files (ignoring the c4gh files) and extracts the root element name.
 # - For each xml file it loops over the xsd files (starting from the "BP" ones and ignoring
@@ -725,6 +750,43 @@ function validate_with_xsd_v2 {
         ERROR_STATUS=1
     else
         cecho green "Validation succeeded for xml files"
+    fi
+}
+
+function validate_with_xsd_v3 {
+    cecho yellow "Validation for v3 xml files started..."
+    local error_flag=0
+    local xml xml_base xml_name xsd
+    local xml_files=("$WORKDIR"/xml-files/*.xml)
+
+    if [[ ! -f "${xml_files[0]}" ]]; then
+        cecho red "ERROR: No XML files found for validation" | tee -a "$WORKDIR/general_errors.logs"
+        ERROR_STATUS=1
+        return
+    fi
+
+    for xml in "${xml_files[@]}"; do
+        xml_base=$(basename "$xml")
+        xml_name=${xml_base%.xml}
+        xsd="$WORKDIR/xsd-files/BP.${xml_name}.xsd"
+
+        if [[ ! -f "$xsd" ]]; then
+            cecho yellow "Warning: No v3 XSD found for $xml (expected $(basename "$xsd"))" | tee -a "$WORKDIR/general_errors.logs"
+            continue
+        fi
+
+        cecho yellow "Validating $xml with $xsd"
+        if ! xmllint --noout --schema "$xsd" "$xml" >/dev/null 2>&1; then
+            cecho red "ERROR: Validation failed for $xml" | tee -a "$WORKDIR/general_errors.logs"
+            xmllint --noout --schema "$xsd" "$xml" > "$WORKDIR/$xml_name.error" 2>&1
+            error_flag=1
+        fi
+    done
+
+    if [[ $error_flag -eq 1 ]]; then
+        ERROR_STATUS=1
+    else
+        cecho green "Validation succeeded for v3 xml files"
     fi
 }
 
@@ -1023,15 +1085,17 @@ fi
 # Validation steps
 check_file_sizes
 
-validate_structure
-
 get_xml_files
 
 trap remove_private_key EXIT HUP INT QUIT PIPE TERM
 
 decrypt_xml_files
 
-find_metadata_version
+find_metadata_version || exit 1
+
+check_annotation_metadata
+
+validate_structure
 
 get_xsd_files
 
