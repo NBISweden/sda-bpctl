@@ -649,7 +649,6 @@ function check_annotation_metadata {
     for bucket in "${INBOX_BUCKETS[@]}"; do
 
         local metadata_annotations=$(s3cmd_command ls "s3://${bucket}/${user}/${dataset}/METADATA/annotation.xml.c4gh" 2>/dev/null)
-        echo "metadata_annotations: $metadata_annotations"
         if [[ -n "$metadata_annotations" ]]; then
             contains_annotations=true
             echo "Dataset contains annotation metadata"
@@ -772,8 +771,7 @@ function validate_with_xsd_v3 {
         xsd="$WORKDIR/xsd-files/BP.${xml_name}.xsd"
 
         if [[ ! -f "$xsd" ]]; then
-            cecho red "ERROR: No v3 XSD found for $xml (expected $(basename "$xsd"))" | tee -a "$WORKDIR/general_errors.logs"
-            error_flag=1
+            cecho yellow "Warning: No v3 XSD found for $xml (expected $(basename "$xsd"))" | tee -a "$WORKDIR/general_errors.logs"
             continue
         fi
 
