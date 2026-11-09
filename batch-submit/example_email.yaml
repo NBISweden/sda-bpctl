@@ -1,0 +1,32 @@
+# Example for send_email_through_bptickets.py: one TO address, several CC addresses.
+#
+#   Dry run:  ./send_email_through_bptickets.py --config example_email_to_cc.yaml
+#   Send:     ./send_email_through_bptickets.py --config example_email_to_cc.yaml --send
+#
+# TICKET_API_KEY must be set in the environment (it is never read from this file).
+# TICKET_MAILBOX_ID and TICKET_USER_ID come from the environment unless set below.
+
+to: jane@example.org            # one TO address
+cc:                             # several CC addresses (a list)
+  - bob@example.org
+  - ann@example.org
+  - carol@example.org
+# cc: bob@example.org, ann@example.org   # a comma-separated string works too
+# bcc: [audit@example.org]               # optional blind copies
+
+subject: Final notice - cleanup of your uningested datasets in the Inbox
+
+status: closed                  # active | pending | closed (new email default: active)
+tags: [cleanup, final_notice]   # optional tags on the conversation
+
+body: |
+  Dear Jane,
+
+  One week ago we sent you a notification about the cleanup of your uningested
+  datasets in our Inbox. We have not received a reply.
+
+  If you want any of these datasets ingested, please reply to this email within
+  the next 24 hours. Otherwise we will delete them.
+
+  Best regards,
+  BP-ops team
