@@ -65,7 +65,8 @@ fi
 S3_LIST_FILE="${OUTPUT_DIR%/}/${S3_LIST_FILENAME}"
 
 if [[ -n "$MAX_AGE" && -f "$S3_LIST_FILE" ]]; then
-    file_age=$(($(date +%s) - $(stat -c %Y "$S3_LIST_FILE")))
+    mtime=$(stat -c %Y "$S3_LIST_FILE" 2>/dev/null || stat -f %m "$S3_LIST_FILE")
+    file_age=$(($(date +%s) - mtime))
     if (( file_age <= MAX_AGE )); then
         echo "[+] Using cached ${S3_LIST_FILE} (${file_age}s old, max ${MAX_AGE}s)."
         exit 0

@@ -20,7 +20,7 @@ usage() {
     echo "      create the missing credential files from vault, and exit. Used by batch_submit.sh."
     echo "  -t  With -p: also check the settings needed to reply to tickets."
     echo ""
-    echo "Prerequisites: s3cmd, vault (logged in), kubectl, KUBECONFIG, ACCESS_TOKEN."
+    echo "Prerequisites: s3cmd, vault (logged in), kubectl, bpctl, xmllint, crypt4gh, jq, KUBECONFIG, ACCESS_TOKEN."
     echo "Missing ~/.sda/s3cmd-bp-master-inbox.conf and TICKET_API_KEY are fetched from vault."
     echo ""
     echo "Exit codes: 0 ok, 1 error, 3 dataset submitted but the reply to the conversation FAILED"
@@ -116,6 +116,10 @@ REQUIRED_COMMANDS=(
     "tr"
     "vault"
     "kubectl"
+    "bpctl"
+    "xmllint"
+    "crypt4gh"
+    "jq"
 )
 
 MISSING_COMMANDS=()
