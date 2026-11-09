@@ -34,7 +34,7 @@ You do not have to create these by hand:
 
 | What | Created from | When |
 |---|---|---|
-| `~/.sda/s3cmd-bp-master-inbox.conf` (mode 600) | `bp-secrets/S3_keys/STO2/inbox` and `bp-secrets/S3_keys/STO2` | if the file is missing |
+| `~/.sda/s3cmd-bp-master-inbox.conf` (mode 600) | `bp-secrets/S3_keys/STO2/inbox` (keys) and `bp-secrets/S3_keys/STO2` (endpoint); same settings as the usual file | if the file is missing |
 | `TICKET_API_KEY` | `bp-secrets/bp-tickets`, field `apikey` | only when a list row has a conversation id, and the key is not set. It is kept in memory and not written to disk. |
 
 An existing file is never overwritten. To rebuild the s3cmd config, for example after the

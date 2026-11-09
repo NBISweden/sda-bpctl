@@ -50,11 +50,8 @@ echo "[+] Creating ${S3CMD_INBOX_CONF} from vault..."
 # Read everything first, so that a vault error does not leave a half-written file
 ACCESS_KEY_INBOX=$(vault kv get -field=access_key bp-secrets/S3_keys/STO2/inbox)
 SECRET_KEY_INBOX=$(vault kv get -field=secret_key bp-secrets/S3_keys/STO2/inbox)
-# The S3 endpoint is the second entry of the comma-separated list; s3cmd wants no scheme
-HOST=$(vault kv get -field=endpoints bp-secrets/S3_keys/STO2 | cut -d, -f2)
-HOST="${HOST#http://}"
-HOST="${HOST#https://}"
-HOST="${HOST%/}"
+# The S3 endpoint is the second entry of the comma-separated list (e.g. https://s3a4.sto2.safedc.net)
+HOST=$(vault kv get -field=endpoints bp-secrets/S3_keys/STO2 | cut -d, -f2 | tr -d '[:space:]')
 
 if [[ -z "$ACCESS_KEY_INBOX" || -z "$SECRET_KEY_INBOX" || -z "$HOST" ]]; then
     echo "[-] Error: vault returned an empty access key, secret key or endpoint." >&2
@@ -67,14 +64,20 @@ TMP_CONF=$(mktemp "${S3CMD_INBOX_CONF}.XXXXXX")
 trap 'rm -f "$TMP_CONF"' EXIT
 
 {
-    echo "[default]"
+    echo "encrypt = False"
+    echo "multipart_chunk_size_mb = 50"
+    echo "use_https = True"
+    echo "socket_timeout = 30"
+    echo "check_ssl_certificate = False"
+    echo "guess_mime_type = True"
+    echo "human_readable_sizes = True"
+    echo "check_ssl_hostname = False"
+    echo "encoding = UTF-8"
+    echo ""
     echo "access_key = ${ACCESS_KEY_INBOX}"
-    echo "secret_key = ${SECRET_KEY_INBOX}"
     echo "host_base = ${HOST}"
     echo "host_bucket = ${HOST}"
-    echo "use_https = True"
-    echo "check_ssl_certificate = True"
-    echo "signature_v2 = False"
+    echo "secret_key = ${SECRET_KEY_INBOX}"
 } > "$TMP_CONF"
 
 chmod 600 "$TMP_CONF"
