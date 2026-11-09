@@ -40,7 +40,7 @@ if ! command -v vault >/dev/null 2>&1; then
     echo "[-] Error: vault is not in PATH, cannot create ${S3CMD_INBOX_CONF}." >&2
     exit 1
 fi
-if ! vault token renew >/dev/null 2>&1; then
+if ! vault token renew >/dev/null 2>&1 && ! vault token lookup >/dev/null 2>&1; then
     echo "[-] Error: You must log in to ${VAULT_ADDR} before ${S3CMD_INBOX_CONF} can be created." >&2
     exit 1
 fi

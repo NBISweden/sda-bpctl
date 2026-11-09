@@ -23,8 +23,8 @@ if one is missing):
 | Requirement | How to get it |
 |---|---|
 | `s3cmd`, `kubectl`, `vault`, `python3` in `PATH` | install them |
-| Vault login | `vault login ...` (`VAULT_ADDR` defaults to `https://vault.nbis.se`). Checked with `vault token renew`. |
-| `KUBECONFIG` | export it, or have `~/.sda/kubeconfig_bp.yaml` (the default). The file must exist; create it with `cluster_v2/k8s_cluster/scripts/get_kubeconfig.sh` in BigPicture-Deployment. |
+| Vault login | `vault login ...` (`VAULT_ADDR` defaults to `https://vault.nbis.se`). The script stops if `vault token renew` and `vault token lookup` both fail. |
+| `KUBECONFIG` | export it, or have `~/.sda/kubeconfig_bp.yaml` (the default). The file must exist and `kubectl get ns` must work with it (checked); create the file with `cluster_v2/k8s_cluster/scripts/get_kubeconfig.sh` in BigPicture-Deployment. |
 | `ACCESS_TOKEN` (admin API token for the validator) | export it, or have the `access_token` line in `~/.sda/s3cmd-bp-download.conf`, which is read automatically |
 | `TICKET_USER_ID` | only to reply to tickets: export your agent id, the number in `https://tickets.nbis.se/users/profile/<id>` |
 
@@ -132,6 +132,7 @@ them from the list file before you run it again.
 - **`Current directory ... does not match requested DATASET_FOLDER`**: run
   `submit_dataset.sh` from a folder named like the dataset. `batch_submit.sh` does this for you.
 - **`You must log in to https://vault.nbis.se`**: run your vault login again.
+- **`kubectl get ns` failed**: the kubeconfig is expired or the cluster is unreachable (VPN?). Create a fresh kubeconfig.
 - **`KUBECONFIG file ... not found`** or **`ACCESS_TOKEN is not set`**: see the requirements above.
 - **`TICKET_USER_ID must be set to a number`**: export your agent id, see above. Only needed
   when the list has conversation ids.

@@ -140,7 +140,7 @@ fi
 # ------------------------------------------------------------------------------
 # Vault login and credentials
 # ------------------------------------------------------------------------------
-if ! vault token renew >/dev/null 2>&1; then
+if ! vault token renew >/dev/null 2>&1 && ! vault token lookup >/dev/null 2>&1; then
     echo "[-] Error: You must log in to ${VAULT_ADDR} (vault login) before using this script." >&2
     exit 1
 fi
@@ -153,6 +153,13 @@ KUBECONFIG="${KUBECONFIG:-$HOME/.sda/kubeconfig_bp.yaml}"
 export KUBECONFIG
 if [[ ! -s "$KUBECONFIG" ]]; then
     echo "[-] Error: KUBECONFIG file '$KUBECONFIG' not found. Export KUBECONFIG, or create the file with cluster_v2/k8s_cluster/scripts/get_kubeconfig.sh from BigPicture-Deployment." >&2
+    exit 1
+fi
+
+# The file must also work: kubectl has to reach the cluster with it
+if ! kubectl get ns --request-timeout=20s >/dev/null 2>&1; then
+    echo "[-] Error: 'kubectl get ns' failed with KUBECONFIG '$KUBECONFIG' (expired credentials, VPN, wrong file?). Output:" >&2
+    kubectl get ns --request-timeout=20s 2>&1 | sed 's/^/    /' >&2 || true
     exit 1
 fi
 
