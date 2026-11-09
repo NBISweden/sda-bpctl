@@ -14,13 +14,13 @@ usage() {
     echo "  -c  Ticket conversation id (Optional). When given, after validation has passed and"
     echo "      the dataset is submitted, a reply is sent to that conversation and the tag"
     echo "      '${VALIDATION_TAG}' is added (uses send_email_through_bptickets.py;"
-    echo "      TICKET_API_KEY, TICKET_MAILBOX_ID and TICKET_USER_ID come from the environment if"
-    echo "      exported, otherwise from ~/.sda/init_bpsubmit_prod.sh)."
+    echo "      TICKET_USER_ID must be exported; TICKET_MAILBOX_ID defaults to 2; TICKET_API_KEY is"
+    echo "      read from vault unless exported)."
     echo "  -p  Only check the prerequisites (tools, vault login, KUBECONFIG, credentials),"
     echo "      create the missing credential files from vault, and exit. Used by batch_submit.sh."
     echo "  -t  With -p: also check the settings needed to reply to tickets."
     echo ""
-    echo "Prerequisites: s3cmd, vault (logged in), kubectl, KUBECONFIG, ACCESS_TOKEN, validator."
+    echo "Prerequisites: s3cmd, vault (logged in), kubectl, KUBECONFIG, ACCESS_TOKEN."
     echo "Missing ~/.sda/s3cmd-bp-master-inbox.conf and TICKET_API_KEY are fetched from vault."
     echo ""
     echo "Exit codes: 0 ok, 1 error, 3 dataset submitted but the reply to the conversation FAILED"
@@ -83,41 +83,23 @@ fi
 # ------------------------------------------------------------------------------
 # Environment Setup & Command Pre-checks
 # ------------------------------------------------------------------------------
-# TICKET_* variables already set (and exported) in the environment take precedence over
-# the ones in the init file, which only supplies the values that are not set.
-TICKET_VARS=(TICKET_API_KEY TICKET_PASSWORD TICKET_MAILBOX_ID TICKET_USER_ID TICKET_URL)
-SAVED_TICKET_VARS=()
-for v in "${TICKET_VARS[@]}"; do
-    if [[ -n "${!v:-}" ]]; then
-        printf -v "SAVED_${v}" '%s' "${!v}"
-        SAVED_TICKET_VARS+=("$v")
-    fi
-done
-
-# The init file is optional: it can set ACCESS_TOKEN, KUBECONFIG, validator and TICKET_*.
-# Anything exported in the shell works as well.
-if [[ -f "$HOME/.sda/init_bpsubmit_prod.sh" ]]; then
-    # shellcheck disable=SC1091
-    source "$HOME/.sda/init_bpsubmit_prod.sh"
-fi
-
-# Restore the TICKET_* values that were set in the environment before the init file ran
-for v in ${SAVED_TICKET_VARS[@]+"${SAVED_TICKET_VARS[@]}"}; do
-    sv="SAVED_${v}"
-    export "$v=${!sv}"
-done
-
 SCRIPT_PATH=$(cd "$(dirname "$0")" && pwd)
 
-# The validator of this repository, unless the init file or the environment sets another
-if [[ -n "${validator:-}" ]]; then
-    VALIDATOR_CMD="$validator"
-elif [[ -x "$SCRIPT_PATH/../validator/validator.sh" ]]; then
-    VALIDATOR_CMD="$SCRIPT_PATH/../validator/validator.sh"
-else
-    VALIDATOR_CMD="validator"
-fi
+# The validator of this repository (it lives next to this folder)
+VALIDATOR_CMD="$SCRIPT_PATH/../validator/validator.sh"
 export VAULT_ADDR="${VAULT_ADDR:-https://vault.nbis.se}"
+
+# Ticket settings: the mailbox defaults to 2, TICKET_USER_ID must be set by each user
+TICKET_MAILBOX_ID="${TICKET_MAILBOX_ID:-2}"
+export TICKET_MAILBOX_ID
+
+# Admin API token for the validator: from the environment, else from the s3cmd
+# download config (~/.sda/s3cmd-bp-download.conf)
+DOWNLOAD_CONF="$HOME/.sda/s3cmd-bp-download.conf"
+if [[ -z "${ACCESS_TOKEN:-}" && -f "$DOWNLOAD_CONF" ]]; then
+    ACCESS_TOKEN=$(grep access_token "$DOWNLOAD_CONF" | head -n 1 | awk '{print $NF}' || true)
+fi
+export ACCESS_TOKEN="${ACCESS_TOKEN:-}"
 for helper in get_inbox_filelist.sh get_filelist_for_datasetfolder.sh; do
     if [[ ! -f "$SCRIPT_PATH/$helper" ]]; then
         echo "[-] Error: Script not found: $SCRIPT_PATH/$helper" >&2
@@ -134,7 +116,6 @@ REQUIRED_COMMANDS=(
     "tr"
     "vault"
     "kubectl"
-    "$VALIDATOR_CMD"
 )
 
 MISSING_COMMANDS=()
@@ -143,6 +124,10 @@ for cmd in "${REQUIRED_COMMANDS[@]}"; do
         MISSING_COMMANDS+=("$cmd")
     fi
 done
+
+if [[ ! -x "$VALIDATOR_CMD" ]]; then
+    MISSING_COMMANDS+=("$VALIDATOR_CMD")
+fi
 
 if [[ ${#MISSING_COMMANDS[@]} -gt 0 ]]; then
     echo "[-] Error: The following required commands/tools are missing or not in PATH:" >&2
@@ -172,7 +157,7 @@ if [[ ! -s "$KUBECONFIG" ]]; then
 fi
 
 if [[ -z "${ACCESS_TOKEN:-}" ]]; then
-    echo "[-] Error: ACCESS_TOKEN is not set (export it, or set it in ~/.sda/init_bpsubmit_prod.sh)." >&2
+    echo "[-] Error: ACCESS_TOKEN is not set (export it, or provide ${DOWNLOAD_CONF} with an access_token line)." >&2
     exit 1
 fi
 
@@ -203,7 +188,7 @@ if [[ $NEED_TICKET -eq 1 ]]; then
     fi
     for v in TICKET_MAILBOX_ID TICKET_USER_ID; do
         if ! [[ "${!v:-}" =~ ^[0-9]+$ ]]; then
-            echo "[-] Error: ${v} must be set to a number (export it, or set it in ~/.sda/init_bpsubmit_prod.sh)." >&2
+            echo "[-] Error: ${v} must be set to a number (export it; TICKET_USER_ID is your agent id, the number in https://tickets.nbis.se/users/profile/<id>)." >&2
             reply_ok=0
         fi
     done

@@ -23,10 +23,13 @@ if one is missing):
 | Requirement | How to get it |
 |---|---|
 | `s3cmd`, `kubectl`, `vault`, `python3` in `PATH` | install them |
-| `validator` | the one in this repo, `../validator/validator.sh`, is used by default. Set `validator=/path/to/validator.sh` in the init file to use another. |
-| Vault login | `export VAULT_ADDR=https://vault.nbis.se` (the default) and `vault login ...`. Checked with `vault token renew`. |
+| Vault login | `vault login ...` (`VAULT_ADDR` defaults to `https://vault.nbis.se`). Checked with `vault token renew`. |
 | `KUBECONFIG` | export it, or have `~/.sda/kubeconfig_bp.yaml` (the default). The file must exist; create it with `cluster_v2/k8s_cluster/scripts/get_kubeconfig.sh` in BigPicture-Deployment. |
-| `ACCESS_TOKEN` | export it, or set it in `~/.sda/init_bpsubmit_prod.sh` (admin API token for the validator) |
+| `ACCESS_TOKEN` (admin API token for the validator) | export it, or have the `access_token` line in `~/.sda/s3cmd-bp-download.conf`, which is read automatically |
+| `TICKET_USER_ID` | only to reply to tickets: export your agent id, the number in `https://tickets.nbis.se/users/profile/<id>` |
+
+The validator is `../validator/validator.sh` in this repository, found relative to the
+scripts. No init file is needed.
 
 ### Credentials created from vault
 
@@ -34,27 +37,25 @@ You do not have to create these by hand:
 
 | What | Created from | When |
 |---|---|---|
-| `~/.sda/s3cmd-bp-master-inbox.conf` (mode 600) | `bp-secrets/S3_keys/STO2/inbox` (keys) and `bp-secrets/S3_keys/STO2` (endpoint); same settings as the usual file | if the file is missing |
-| `TICKET_API_KEY` | `bp-secrets/bp-tickets`, field `apikey` | only when a list row has a conversation id, and the key is not set. It is kept in memory and not written to disk. |
+| `~/.sda/s3cmd-bp-master-inbox.conf` (mode 600) | `bp-secrets/S3_keys/STO2/inbox` (keys) and `bp-secrets/S3_keys/STO2` (endpoint) | if the file is missing |
+| `TICKET_API_KEY` | `bp-secrets/bp-tickets`, field `apikey` | only when a list row has a conversation id, and the key is not exported. It is kept in memory and not written to disk. |
 
 An existing file is never overwritten. To rebuild the s3cmd config, for example after the
 keys were rotated, run `./setup_credentials.sh --force`.
 
-### Optional init file
+### Optional settings
 
-`~/.sda/init_bpsubmit_prod.sh` is sourced if it exists. It can set `ACCESS_TOKEN`,
-`KUBECONFIG`, `validator` and the ticket settings:
+| Variable | Default |
+|---|---|
+| `TICKET_MAILBOX_ID` | `2` |
+| `TICKET_URL` | `https://tickets.nbis.se` |
+| `TICKET_API_KEY` | read from vault; export it to use another key |
+
+Example, once per shell session:
 
 ```bash
-export ACCESS_TOKEN=...
-export TICKET_URL=https://tickets.nbis.se
-export TICKET_MAILBOX_ID=2      # number after /mailbox/ in the mailbox URL
-export TICKET_USER_ID=9         # your agent id: /users/profile/<id>
-# export TICKET_API_KEY=...     # normally not needed, it is read from vault
+export TICKET_USER_ID=9
 ```
-
-A value you have exported in your shell wins over the one in the init file.
-Keep the file private: `chmod 600 ~/.sda/init_bpsubmit_prod.sh`.
 
 ## Quick start
 
@@ -132,10 +133,10 @@ them from the list file before you run it again.
   `submit_dataset.sh` from a folder named like the dataset. `batch_submit.sh` does this for you.
 - **`You must log in to https://vault.nbis.se`**: run your vault login again.
 - **`KUBECONFIG file ... not found`** or **`ACCESS_TOKEN is not set`**: see the requirements above.
+- **`TICKET_USER_ID must be set to a number`**: export your agent id, see above. Only needed
+  when the list has conversation ids.
 - **`could not read TICKET_API_KEY from vault`**: your vault policy may not allow
   `bp-secrets/bp-tickets`. Export `TICKET_API_KEY` yourself instead.
-- **`TICKET_MAILBOX_ID must be set to a number`**: see the init file above. Only needed
-  when the list has conversation ids.
 - **`Could not determine USER_ID`**: the folder is not in the inbox listing. Delete
   `bpprod-inbox-all.s3.txt` to force a new listing and check the folder name.
 - **Validation failed**: read `DATASET_X/submit_dataset.log`. Nothing was submitted.
