@@ -7,6 +7,7 @@ set -euo pipefail
 # ------------------------------------------------------------------------------
 usage() {
     echo "Usage: $0 -d DATASET_FOLDER -n MAIL_UPLOADER_NAME -m MAIL_UPLOADER [-c CONVERSATION_ID]"
+    echo "       $0 -p [-t]"
     echo "  -d  Dataset folder name (Mandatory)"
     echo "  -n  Mail uploader name (Mandatory)"
     echo "  -m  Mail uploader email (Mandatory)"
@@ -15,6 +16,12 @@ usage() {
     echo "      '${VALIDATION_TAG}' is added (uses send_email_through_bptickets.py;"
     echo "      TICKET_API_KEY, TICKET_MAILBOX_ID and TICKET_USER_ID come from the environment if"
     echo "      exported, otherwise from ~/.sda/init_bpsubmit_prod.sh)."
+    echo "  -p  Only check the prerequisites (tools, vault login, KUBECONFIG, credentials),"
+    echo "      create the missing credential files from vault, and exit. Used by batch_submit.sh."
+    echo "  -t  With -p: also check the settings needed to reply to tickets."
+    echo ""
+    echo "Prerequisites: s3cmd, vault (logged in), kubectl, KUBECONFIG, ACCESS_TOKEN, validator."
+    echo "Missing ~/.sda/s3cmd-bp-master-inbox.conf and TICKET_API_KEY are fetched from vault."
     echo ""
     echo "Exit codes: 0 ok, 1 error, 3 dataset submitted but the reply to the conversation FAILED"
     echo "(do not submit again; check the conversation by hand)."
@@ -30,13 +37,17 @@ DATASET_FOLDER=""
 MAIL_UPLOADER_NAME=""
 MAIL_UPLOADER=""
 CONVERSATION_ID=""
+CHECK_ONLY=0
+NEED_TICKET=0
 
-while getopts ":d:n:m:c:h" opt; do
+while getopts ":d:n:m:c:pth" opt; do
     case "${opt}" in
         d) DATASET_FOLDER="${OPTARG}" ;;
         n) MAIL_UPLOADER_NAME="${OPTARG}" ;;
         m) MAIL_UPLOADER="${OPTARG}" ;;
         c) CONVERSATION_ID="${OPTARG}" ;;
+        p) CHECK_ONLY=1 ;;
+        t) NEED_TICKET=1 ;;
         h) usage ;;
         :)
             echo "[-] Error: Option -${OPTARG} requires an argument." >&2
@@ -50,7 +61,7 @@ while getopts ":d:n:m:c:h" opt; do
 done
 
 # Validate Mandatory Flags
-if [[ -z "$DATASET_FOLDER" || -z "$MAIL_UPLOADER_NAME" || -z "$MAIL_UPLOADER" ]]; then
+if [[ $CHECK_ONLY -eq 0 && ( -z "$DATASET_FOLDER" || -z "$MAIL_UPLOADER_NAME" || -z "$MAIL_UPLOADER" ) ]]; then
     echo "[-] Error: Missing mandatory arguments." >&2
     usage
 fi
@@ -64,7 +75,7 @@ fi
 # Check Current Working Directory
 # ------------------------------------------------------------------------------
 CURRENT_DIR=$(basename "$PWD")
-if [[ "$CURRENT_DIR" != "$DATASET_FOLDER" ]]; then
+if [[ $CHECK_ONLY -eq 0 && "$CURRENT_DIR" != "$DATASET_FOLDER" ]]; then
     echo "[-] Warning: Current directory ('$CURRENT_DIR') does not match requested DATASET_FOLDER ('$DATASET_FOLDER'). Aborting execution." >&2
     exit 1
 fi
@@ -83,12 +94,11 @@ for v in "${TICKET_VARS[@]}"; do
     fi
 done
 
+# The init file is optional: it can set ACCESS_TOKEN, KUBECONFIG, validator and TICKET_*.
+# Anything exported in the shell works as well.
 if [[ -f "$HOME/.sda/init_bpsubmit_prod.sh" ]]; then
     # shellcheck disable=SC1091
     source "$HOME/.sda/init_bpsubmit_prod.sh"
-else
-    echo "[-] Error: $HOME/.sda/init_bpsubmit_prod.sh not found!" >&2
-    exit 1
 fi
 
 # Restore the TICKET_* values that were set in the environment before the init file ran
@@ -97,9 +107,17 @@ for v in ${SAVED_TICKET_VARS[@]+"${SAVED_TICKET_VARS[@]}"}; do
     export "$v=${!sv}"
 done
 
-VALIDATOR_CMD="${validator:-validator}"
-
 SCRIPT_PATH=$(cd "$(dirname "$0")" && pwd)
+
+# The validator of this repository, unless the init file or the environment sets another
+if [[ -n "${validator:-}" ]]; then
+    VALIDATOR_CMD="$validator"
+elif [[ -x "$SCRIPT_PATH/../validator/validator.sh" ]]; then
+    VALIDATOR_CMD="$SCRIPT_PATH/../validator/validator.sh"
+else
+    VALIDATOR_CMD="validator"
+fi
+export VAULT_ADDR="${VAULT_ADDR:-https://vault.nbis.se}"
 for helper in get_inbox_filelist.sh get_filelist_for_datasetfolder.sh; do
     if [[ ! -f "$SCRIPT_PATH/$helper" ]]; then
         echo "[-] Error: Script not found: $SCRIPT_PATH/$helper" >&2
@@ -115,6 +133,7 @@ REQUIRED_COMMANDS=(
     "sed"
     "tr"
     "vault"
+    "kubectl"
     "$VALIDATOR_CMD"
 )
 
@@ -133,20 +152,53 @@ if [[ ${#MISSING_COMMANDS[@]} -gt 0 ]]; then
     exit 1
 fi
 
+# ------------------------------------------------------------------------------
+# Vault login and credentials
+# ------------------------------------------------------------------------------
+if ! vault token renew >/dev/null 2>&1; then
+    echo "[-] Error: You must log in to ${VAULT_ADDR} (vault login) before using this script." >&2
+    exit 1
+fi
+
+# ~/.sda/s3cmd-bp-master-inbox.conf is created from vault if it is missing
+bash "$SCRIPT_PATH/setup_credentials.sh" || exit 1
+
+# KUBECONFIG is needed by the validator for the production deployment
+KUBECONFIG="${KUBECONFIG:-$HOME/.sda/kubeconfig_bp.yaml}"
+export KUBECONFIG
+if [[ ! -s "$KUBECONFIG" ]]; then
+    echo "[-] Error: KUBECONFIG file '$KUBECONFIG' not found. Export KUBECONFIG, or create the file with cluster_v2/k8s_cluster/scripts/get_kubeconfig.sh from BigPicture-Deployment." >&2
+    exit 1
+fi
+
+if [[ -z "${ACCESS_TOKEN:-}" ]]; then
+    echo "[-] Error: ACCESS_TOKEN is not set (export it, or set it in ~/.sda/init_bpsubmit_prod.sh)." >&2
+    exit 1
+fi
+
 # Preflight for the reply to the conversation: check it BEFORE anything is submitted
 SEND_EMAIL_SCRIPT="$SCRIPT_PATH/send_email_through_bptickets.py"
 if [[ -n "$CONVERSATION_ID" ]]; then
+    NEED_TICKET=1
+fi
+if [[ $NEED_TICKET -eq 1 ]]; then
+    # The API key comes from vault unless it is exported or set in the init file
+    if [[ -z "${TICKET_API_KEY:-${TICKET_PASSWORD:-}}" ]]; then
+        echo "[+] TICKET_API_KEY is not set, reading it from vault..."
+        if TICKET_API_KEY=$(vault kv get -field=apikey bp-secrets/bp-tickets) && [[ -n "$TICKET_API_KEY" ]]; then
+            export TICKET_API_KEY
+        else
+            echo "[-] Error: could not read TICKET_API_KEY from vault (bp-secrets/bp-tickets)." >&2
+            exit 1
+        fi
+    fi
     reply_ok=1
     if [[ ! -f "$SEND_EMAIL_SCRIPT" ]]; then
         echo "[-] Error: Script not found: $SEND_EMAIL_SCRIPT" >&2
         reply_ok=0
     fi
     if ! command -v python3 >/dev/null 2>&1; then
-        echo "[-] Error: python3 is required to reply to conversation #${CONVERSATION_ID}." >&2
-        reply_ok=0
-    fi
-    if [[ -z "${TICKET_API_KEY:-${TICKET_PASSWORD:-}}" ]]; then
-        echo "[-] Error: TICKET_API_KEY is not set (export it, or set it in ~/.sda/init_bpsubmit_prod.sh)." >&2
+        echo "[-] Error: python3 is required to reply to tickets." >&2
         reply_ok=0
     fi
     for v in TICKET_MAILBOX_ID TICKET_USER_ID; do
@@ -158,6 +210,11 @@ if [[ -n "$CONVERSATION_ID" ]]; then
     if [[ $reply_ok -eq 0 ]]; then
         exit 1
     fi
+fi
+
+if [[ $CHECK_ONLY -eq 1 ]]; then
+    echo "[+] All prerequisites are met."
+    exit 0
 fi
 
 # Reply to the uploader's conversation: validation passed. Returns the script's exit code.
@@ -183,15 +240,6 @@ send_validation_reply() {
     rm -f "$body_file"
     return $rc
 }
-
-# -------------------------
-# Vault authentication
-# -------------------------
-if ! vault token renew >/dev/null 2>&1; then
-  echo "Error: You must log in to vault.nbis.se before using this script"
-  exit 1
-fi
-
 
 echo "=========================================================================="
 echo " Processing Dataset: ${DATASET_FOLDER}"

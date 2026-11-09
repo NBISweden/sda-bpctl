@@ -23,8 +23,12 @@ usage() {
     echo "  https://tickets.nbis.se/conversation/<ID>). It is passed to submit_dataset.sh (-c), which"
     echo "  replies to that conversation and adds the tag 'validation successful' once validation"
     echo "  has passed and the dataset is submitted. Without CONVERSATION_ID no reply is sent."
-    echo "  The ticket settings (TICKET_API_KEY, TICKET_MAILBOX_ID, TICKET_USER_ID) come from"
-    echo "  ~/.sda/init_bpsubmit_prod.sh."
+    echo "  The ticket settings (TICKET_MAILBOX_ID, TICKET_USER_ID, optionally TICKET_API_KEY) come"
+    echo "  from the environment or ~/.sda/init_bpsubmit_prod.sh. TICKET_API_KEY is read from vault"
+    echo "  if it is not set."
+    echo ""
+    echo "  Before the first dataset the prerequisites are checked (s3cmd, vault login, kubectl,"
+    echo "  KUBECONFIG, ACCESS_TOKEN). A missing ~/.sda/s3cmd-bp-master-inbox.conf is created from vault."
     echo ""
     echo "Example LIST_FILE:"
     echo "  DATASET_AAAAAAA|aaaaaaaaa.aaaaaa@dummy.com|Dummy User|889"
@@ -47,6 +51,18 @@ SCRIPT_PATH=$(cd "$(dirname "$0")" && pwd)
 SUBMIT_SCRIPT="${SCRIPT_PATH}/submit_dataset.sh"
 if [[ ! -f "$SUBMIT_SCRIPT" ]]; then
     echo "[-] Error: Script not found: $SUBMIT_SCRIPT" >&2
+    exit 1
+fi
+
+# Check the prerequisites once, before the first dataset (tools, vault login, KUBECONFIG,
+# credentials; missing credential files are created from vault)
+precheck_args=(-p)
+if awk -F'|' '!/^[[:space:]]*(#|$)/ && $4 ~ /[^[:space:]]/ { found=1 } END { exit !found }' "$LIST_FILE"; then
+    precheck_args+=(-t)
+fi
+echo "[batch] Checking prerequisites..."
+if ! bash "$SUBMIT_SCRIPT" "${precheck_args[@]}" < /dev/null; then
+    echo "[-] Error: prerequisites are not met. Nothing was submitted." >&2
     exit 1
 fi
 
