@@ -3,7 +3,7 @@
 Submit several BigPicture datasets from the inbox in one go. For each dataset the
 scripts validate it, submit it for ingestion and, if you give a ticket number, reply
 to the uploader with a "validation passed" message and add the tag
-`validation successful`.
+`validation successful` to the ticket.
 
 ## Get started
 

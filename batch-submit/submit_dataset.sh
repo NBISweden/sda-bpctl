@@ -178,7 +178,7 @@ if [[ -n "$CONVERSATION_ID" ]]; then
     NEED_TICKET=1
 fi
 if [[ $NEED_TICKET -eq 1 ]]; then
-    # The API key comes from vault unless it is exported or set in the init file
+    # The API key comes from vault unless TICKET_API_KEY (or TICKET_PASSWORD) is already exported
     if [[ -z "${TICKET_API_KEY:-${TICKET_PASSWORD:-}}" ]]; then
         echo "[+] TICKET_API_KEY is not set, reading it from vault..."
         if TICKET_API_KEY=$(vault kv get -field=apikey bp-secrets/bp-tickets) && [[ -n "$TICKET_API_KEY" ]]; then
