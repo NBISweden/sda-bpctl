@@ -82,6 +82,14 @@ func (c *Client) GetUsersDatasetFiles() ([]models.FileInfo, error) {
 	return getAllPages[models.FileInfo](c, fmt.Sprintf("users/%s/files", c.userID), q)
 }
 
+// GetDatasetFiles fetches every page of GET /dataset/<datasetID>/files, i.e.
+// all files mapped to the dataset, including files mapped in earlier runs.
+// Returns ErrNotFound if the dataset does not exist or the API does not
+// provide the endpoint.
+func (c *Client) GetDatasetFiles(datasetID string) ([]models.DatasetFileInfo, error) {
+	return getAllPages[models.DatasetFileInfo](c, fmt.Sprintf("dataset/%s/files", url.PathEscape(datasetID)), url.Values{})
+}
+
 // getAllPages fetches every page of a paginated GET endpoint. The API
 // paginates with an opaque keyset cursor: each response carries an
 // X-Next-Cursor header while more pages remain, which is passed back as the

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/NBISweden/sda-bpctl/internal/client"
 	"github.com/NBISweden/sda-bpctl/internal/models"
 )
 
@@ -277,5 +278,69 @@ func TestCheckStableIDsFileMissing(t *testing.T) {
 	err := checkStableIDsFile(path, 3)
 	if err == nil || !strings.Contains(err.Error(), "does not exist") {
 		t.Fatalf("expected a does-not-exist error, got %v", err)
+	}
+}
+
+type fakeDatasetFiles struct {
+	files []models.DatasetFileInfo
+	err   error
+}
+
+func (f fakeDatasetFiles) GetDatasetFiles(string) ([]models.DatasetFileInfo, error) {
+	return f.files, f.err
+}
+
+func TestWriteStableIDsFromDatasetReplacesPartialFile(t *testing.T) {
+	// resumed run: the dataset step only wrote the file mapped in this run
+	path := filepath.Join(t.TempDir(), "DATASET_TEST-stableIDs.txt")
+	if err := os.WriteFile(path, []byte("aa-File-3 /DATASET_TEST/file3.c4gh\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	api := fakeDatasetFiles{files: []models.DatasetFileInfo{
+		{AccessionID: "aa-File-1", Path: "DATASET_TEST/file1.c4gh"},
+		{AccessionID: "aa-File-2", Path: "DATASET_TEST/file2.c4gh"},
+		{AccessionID: "aa-File-3", Path: "DATASET_TEST/file3.c4gh"},
+	}}
+
+	if err := writeStableIDsFromDataset(api, "aa-Dataset-1", path); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkStableIDsFile(path, 3); err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(path)
+	if !strings.HasPrefix(string(content), "aa-File-1 DATASET_TEST/file1.c4gh\n") {
+		t.Errorf("unexpected content %q", content)
+	}
+}
+
+func TestWriteStableIDsFromDatasetCreatesMissingFile(t *testing.T) {
+	// resumed run where every file was already mapped: no file was written
+	path := filepath.Join(t.TempDir(), "DATASET_TEST-stableIDs.txt")
+	api := fakeDatasetFiles{files: []models.DatasetFileInfo{{AccessionID: "aa-File-1", Path: "p1"}}}
+
+	if err := writeStableIDsFromDataset(api, "aa-Dataset-1", path); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkStableIDsFile(path, 1); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWriteStableIDsFromDatasetKeepsFileOnError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "DATASET_TEST-stableIDs.txt")
+	original := "aa-File-1 a\n"
+	if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	api := fakeDatasetFiles{err: fmt.Errorf("wrapped: %w", client.ErrNotFound)}
+
+	err := writeStableIDsFromDataset(api, "aa-Dataset-1", path)
+	if !errors.Is(err, client.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+	content, _ := os.ReadFile(path)
+	if string(content) != original {
+		t.Errorf("file changed to %q", content)
 	}
 }
