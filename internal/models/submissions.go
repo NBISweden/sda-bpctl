@@ -13,3 +13,11 @@ type DatasetInfo struct {
 	CreatedAt     string `json:"createdAt"`
 	NumberOfFiles int    `json:"numberOfFiles"`
 }
+
+// DatasetFileInfo is a file mapped to a dataset, as listed by
+// GET /dataset/<datasetID>/files.
+type DatasetFileInfo struct {
+	FileID      string `json:"id"`
+	AccessionID string `json:"accessionID"`
+	Path        string `json:"path"`
+}

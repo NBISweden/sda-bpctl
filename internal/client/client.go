@@ -75,43 +75,55 @@ func New(cfg *config.Config) (*Client, error) {
 }
 
 // GetUsersDatasetFiles fetches every page of GET /users/<user>/files for
-// the dataset folder. The API paginates with an opaque keyset cursor: each
-// response carries an X-Next-Cursor header while more pages remain, which is
-// passed back as the cursor query parameter until the header is absent.
+// the dataset folder.
 func (c *Client) GetUsersDatasetFiles() ([]models.FileInfo, error) {
-	basePath := fmt.Sprintf("users/%s/files", c.userID)
+	q := url.Values{}
+	q.Set("path_prefix", c.datasetFolder)
+	return getAllPages[models.FileInfo](c, fmt.Sprintf("users/%s/files", c.userID), q)
+}
 
+// GetDatasetFiles fetches every page of GET /dataset/<datasetID>/files, i.e.
+// all files mapped to the dataset, including files mapped in earlier runs.
+// Returns ErrNotFound if the dataset does not exist or the API does not
+// provide the endpoint.
+func (c *Client) GetDatasetFiles(datasetID string) ([]models.DatasetFileInfo, error) {
+	return getAllPages[models.DatasetFileInfo](c, fmt.Sprintf("dataset/%s/files", url.PathEscape(datasetID)), url.Values{})
+}
+
+// getAllPages fetches every page of a paginated GET endpoint. The API
+// paginates with an opaque keyset cursor: each response carries an
+// X-Next-Cursor header while more pages remain, which is passed back as the
+// cursor query parameter until the header is absent.
+func getAllPages[T any](c *Client, basePath string, query url.Values) ([]T, error) {
 	u, err := url.Parse(basePath)
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse base path: %w", err)
 	}
 
-	var allFiles []models.FileInfo
+	var all []T
 	seenCursors := make(map[string]bool)
 	cursor := ""
 	for {
-		q := url.Values{}
-		q.Set("path_prefix", c.datasetFolder)
 		if cursor != "" {
-			q.Set("cursor", cursor)
+			query.Set("cursor", cursor)
 		}
-		u.RawQuery = q.Encode()
+		u.RawQuery = query.Encode()
 
 		respBody, header, err := c.doRequestWithHeader("GET", u.String(), nil)
 		if err != nil {
 			return nil, err
 		}
 
-		var files []models.FileInfo
-		err = json.Unmarshal(respBody, &files)
+		var page []T
+		err = json.Unmarshal(respBody, &page)
 		if err != nil {
 			return nil, err
 		}
-		allFiles = append(allFiles, files...)
+		all = append(all, page...)
 
 		cursor = header.Get("X-Next-Cursor")
 		if cursor == "" {
-			return allFiles, nil
+			return all, nil
 		}
 		if seenCursors[cursor] {
 			return nil, fmt.Errorf("pagination cursor %q returned twice, aborting to avoid an endless loop", cursor)

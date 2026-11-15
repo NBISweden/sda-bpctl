@@ -18,6 +18,7 @@ import (
 	"github.com/NBISweden/sda-bpctl/internal/ingest"
 	"github.com/NBISweden/sda-bpctl/internal/landingpage"
 	"github.com/NBISweden/sda-bpctl/internal/mail"
+	"github.com/NBISweden/sda-bpctl/internal/models"
 	"github.com/spf13/cobra"
 )
 
@@ -123,11 +124,23 @@ func runJob() error {
 		slog.Warn("could not complete landingpage", "err", err)
 	}
 
-	// The stable IDs file only lists the files mapped to the dataset during
-	// this run, so it is incomplete when a previous run already mapped files.
-	// Fail instead of mailing the uploader an incomplete list; the README
-	// describes how to rebuild the file and send the notifications manually.
-	err = checkStableIDsFile(helpers.GetStableIDsPath(dataDirectory, datasetFolder), nrTotalFiles)
+	// The stable IDs file written by the dataset step only lists the files
+	// mapped during this run, and none at all when a previous run already
+	// mapped every file (the data directory does not survive between runs).
+	// Rewrite it from the files mapped to the dataset when the API can list
+	// them. Otherwise fail below instead of mailing the uploader an
+	// incomplete list; the README describes how to rebuild the file and send
+	// the notifications manually.
+	stableIDsPath := helpers.GetStableIDsPath(dataDirectory, datasetFolder)
+	err = writeStableIDsFromDataset(api, datasetID, stableIDsPath)
+	if err != nil {
+		if !errors.Is(err, client.ErrNotFound) {
+			return fmt.Errorf("not sending mail notifications: %w", err)
+		}
+		slog.Warn("API can not list the files of the dataset, keeping the stable IDs file written by the dataset step", "dataset_id", datasetID, "err", err)
+	}
+
+	err = checkStableIDsFile(stableIDsPath, nrTotalFiles)
 	if err != nil {
 		return fmt.Errorf("not sending mail notifications: %w", err)
 	}
@@ -169,6 +182,37 @@ func countDatasetFiles(api client.APIClient, datasetFolder string, datasetID str
 		return 0, 0, fmt.Errorf("no files found in dataset folder %s and no files mapped to dataset %s", datasetFolder, datasetID)
 	}
 	return notMapped, mapped, nil
+}
+
+type datasetFilesLister interface {
+	GetDatasetFiles(datasetID string) ([]models.DatasetFileInfo, error)
+}
+
+// writeStableIDsFromDataset (re)writes the stable IDs file at path with one
+// "<accessionID> <path>" line per file mapped to the dataset. The file is
+// written to a temporary file first so a failed listing never leaves a
+// truncated file behind.
+func writeStableIDsFromDataset(api datasetFilesLister, datasetID string, path string) error {
+	files, err := api.GetDatasetFiles(datasetID)
+	if err != nil {
+		return fmt.Errorf("could not list files of dataset %s: %w", datasetID, err)
+	}
+
+	var b strings.Builder
+	for _, f := range files {
+		fmt.Fprintf(&b, "%s %s\n", f.AccessionID, f.Path)
+	}
+
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(b.String()), 0o644); err != nil { //nolint:gosec
+		return fmt.Errorf("could not write stable IDs file %s: %w", tmp, err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return fmt.Errorf("could not write stable IDs file %s: %w", path, err)
+	}
+
+	slog.Info("wrote stable IDs file from dataset", "filePath", path, "nr_files", len(files))
+	return nil
 }
 
 // checkStableIDsFile returns an error unless the stable IDs file at path

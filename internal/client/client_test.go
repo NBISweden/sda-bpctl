@@ -279,3 +279,42 @@ func TestGetFilesWithStatus(t *testing.T) {
 
 	assertFileIDs(t, got, []models.FileInfo{{FileID: "uploaded1"}, {FileID: "uploaded2"}})
 }
+
+func TestGetDatasetFilesFollowsCursor(t *testing.T) {
+	var paths []string
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		switch r.URL.Query().Get("cursor") {
+		case "":
+			w.Header().Set("X-Next-Cursor", "page-2")
+			fmt.Fprint(w, `[{"id":"f1","accessionID":"aa-File-1","path":"DATASET_TEST/file1.c4gh"}]`) //nolint:errcheck
+		case "page-2":
+			fmt.Fprint(w, `[{"id":"f2","accessionID":"aa-File-2","path":"DATASET_TEST/file2.c4gh"}]`) //nolint:errcheck
+		default:
+			w.WriteHeader(http.StatusTeapot)
+		}
+	})
+	c := newTestClient(t, handler)
+
+	files, err := c.GetDatasetFiles("aa-Dataset-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 2 || files[0].AccessionID != "aa-File-1" || files[1].Path != "DATASET_TEST/file2.c4gh" {
+		t.Fatalf("unexpected files: %+v", files)
+	}
+	for _, p := range paths {
+		if p != "/dataset/aa-Dataset-1/files" {
+			t.Errorf("unexpected request path %q", p)
+		}
+	}
+}
+
+func TestGetDatasetFilesEndpointMissing(t *testing.T) {
+	c := newTestClient(t, http.NotFoundHandler())
+
+	_, err := c.GetDatasetFiles("aa-Dataset-1")
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}

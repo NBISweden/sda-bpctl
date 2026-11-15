@@ -216,7 +216,7 @@ Will run all the above steps in order. Ingestion, accession and mapping files to
 2. accession: wait until all dataset files are `ready`
 3. dataset: wait until all dataset files are mapped to `DATASET_ID`
 4. landing page: move eventual landing pages from the inbox bucket to the public metadata bucket
-5. mail: check that `<DATASET_FOLDER>-stableIDs.txt` lists every dataset file, then send email notifications
+5. mail: rewrite `<DATASET_FOLDER>-stableIDs.txt` from the files mapped to the dataset (`GET /dataset/<DATASET_ID>/files`), check that it lists every dataset file, then send email notifications
 
 "Dataset files" are all files under `DATASET_FOLDER`, except files under `PRIVATE` and `LANDING_PAGE`. The job fails if any of them ends up in `error` status, if a step does not complete within `JOB_TIMEOUT` minutes, or if the stable IDs list is incomplete (see below). Failing landing page and mail steps are only logged as warnings.
 
@@ -224,7 +224,9 @@ The job can be re-run after it failed or timed out; it picks up from where the p
 
 #### incomplete stable IDs list after a re-run
 
-The mail to the uploader has `<DATASET_FOLDER>-stableIDs.txt` attached, which lists the stable ID of every file in the dataset. The job writes this file inside the job pod from the files the API returns, and the API no longer returns files that are part of a dataset. So when a previous run had already mapped files to the dataset, the re-run can not write a complete list:
+The mail to the uploader has `<DATASET_FOLDER>-stableIDs.txt` attached, which lists the stable ID of every file in the dataset. The file lives in the job pod's data directory (an `emptyDir`), so it does not survive between runs. Before the mail step the job therefore rewrites it from all files mapped to the dataset, as listed by `GET /dataset/<DATASET_ID>/files`, which also includes files mapped by a previous run.
+
+That endpoint only exists in newer SDA API versions. If the API answers `404`, the job logs a warning and keeps the file written by the dataset step, which is built from `GET /users/<user>/files`. That listing no longer includes files that are part of a dataset, so when a previous run had already mapped files to the dataset, the re-run can not write a complete list:
 
 - if some files were mapped by the previous run, the file only lists the files mapped during the re-run
 - if all files were mapped by the previous run, the file is not written at all
